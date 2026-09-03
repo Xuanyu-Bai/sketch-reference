@@ -11,8 +11,14 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden}
   body{font-family:'Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f3ee;color:#1a1a1a;-webkit-font-smoothing:antialiased}
-  #app{position:relative;width:100vw;height:100vh;display:grid;grid-template-columns:1fr 320px;grid-template-rows:60px 1fr;grid-template-areas:"header header" "canvas controls"}
+  #app{position:relative;width:100vw;height:100vh;display:grid;grid-template-columns:1fr 320px;grid-template-rows:60px 1fr;grid-template-areas:"header header" "canvas controls";transition:grid-template-columns .25s ease}
   @media (max-width:768px){#app{grid-template-columns:1fr;grid-template-rows:60px 1fr auto;grid-template-areas:"header" "canvas" "controls"}}
+  #app.collapsed{grid-template-columns:1fr 0}
+  #app.collapsed #controls{display:none}
+  #app.collapsed .toggle-sidebar-btn{right:12px}
+  .toggle-sidebar-btn{position:absolute;top:14px;right:336px;background:rgba(255,255,255,.08);color:#e8e5dc;border:1px solid #3a3a3a;width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:right .25s ease,background .15s;z-index:20}
+  .toggle-sidebar-btn:hover{background:rgba(255,255,255,.16)}
+  @media (max-width:768px){.toggle-sidebar-btn{right:12px} #app.collapsed .toggle-sidebar-btn{right:12px}}
   header{grid-area:header;padding:12px 24px;background:#1a1a1a;color:#f5f3ee;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:10}
   header h1{font-size:18px;font-weight:500;letter-spacing:.05em}
   header .meta{font-size:12px;opacity:.7}
@@ -27,7 +33,7 @@
   .tracer-reticle .h{position:absolute;top:50%;width:8px;height:1px;background:rgba(200,157,94,.55);transform:translateY(-50%)}
   .tracer-reticle .h.l{left:-6px}.tracer-reticle .h.r{right:-6px}
   .tracer-reticle.active{opacity:1}
-  .view-indicator{position:absolute;top:16px;left:16px;background:rgba(26,26,26,.85);color:#f5f3ee;backdrop-filter:blur(8px);padding:8px 12px;border-radius:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;pointer-events:none;z-index:5;letter-spacing:.05em}
+  .view-indicator{position:absolute;top:16px;left:16px;background:rgba(26,26,26,.85);color:#f5f3ee;backdrop-filter:blur(8px);padding:8px 12px;border-radius:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;pointer-events:none;z-index:5;letter-spacing:.05em;min-width:140px}
   .view-indicator .row{display:flex;justify-content:space-between;gap:16px}
   .view-indicator .k{color:#8a8a8a}
   .view-indicator .v{color:#c89d5e;font-variant-numeric:tabular-nums}
@@ -88,6 +94,7 @@
     <h1>素描临摹 · 3D 参考模型</h1>
     <div class="meta">作品 No. 1 · 头像侧面</div>
   </header>
+  <button class="toggle-sidebar-btn" id="toggle-sidebar" title="折叠/展开工具栏">⇥</button>
 
   <div id="canvas-container">
     <div id="loader">
@@ -123,6 +130,7 @@
     <section>
       <h2>临摹者视角</h2>
       <label class="toggle-row"><span>启用鼠标视角</span><input type="checkbox" id="tracer-view" checked /></label>
+      <label class="toggle-row"><span>显示准星</span><input type="checkbox" id="show-reticle" checked /></label>
       <div class="label-row"><span>灵敏度</span><span class="value" id="sensitivity-val">60%</span></div>
       <input type="range" id="sensitivity" min="10" max="100" value="60" />
       <div class="label-row"><span>摆动范围</span><span class="value" id="range-val">70%</span></div>
@@ -130,7 +138,13 @@
       <div class="label-row"><span>阻尼（惯性）</span><span class="value" id="damping-val">0.10</span></div>
       <input type="range" id="damping" min="3" max="30" value="10" />
       <button id="reset-view" style="width:100%;margin-top:6px;">↻ 视角回正</button>
-      <div class="kbd-hint">💡 鼠标在画布上滑动 = 临摹者头部轻摆，目光掠过模型各部位</div>
+      <button id="recenter" style="width:100%;margin-top:6px;background:#3a2a18;border-color:#5a4530;">⊙ 对准模型中心</button>
+      <button id="frame-model" style="width:100%;margin-top:6px;background:#3a2a18;border-color:#5a4530;">⛶ 框选整个模型</button>
+      <div class="label-row" style="margin-top:10px"><span>水平偏移 X（←左 / 右→）</span><span class="value" id="offset-x-val">0.00</span></div>
+      <input type="range" id="offset-x" min="-1" max="1" step="0.01" value="0" />
+      <div class="label-row"><span>垂直偏移 Y（下↓ / 上↑）</span><span class="value" id="offset-y-val">0.00</span></div>
+      <input type="range" id="offset-y" min="-1" max="1" step="0.01" value="0" />
+      <div class="kbd-hint">💡 鼠标移动 → 临摹者头部轻摆；中央小圆环是<b>视线中心</b>（=相机看的位置），可关闭</div>
     </section>
 
     <section>
@@ -253,10 +267,11 @@ keyLight.position.set(0.7, 1.0, 0.7);
 scene.add(keyLight);
 
 // ============ 底盘（永远固定，模型站在上面） ============
-const FLOOR_Y = -0.5;
+const FLOOR_Y = -0.5;          // 底盘高度（模型脚下）
 const chassisGroup = new THREE.Group();
 scene.add(chassisGroup);
 
+// 圆形基座 —— 模拟写生台 / 转盘
 const baseDisc = new THREE.Mesh(
   new THREE.CylinderGeometry(0.55, 0.6, 0.04, 64),
   new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.55, metalness: 0.15 })
@@ -264,6 +279,7 @@ const baseDisc = new THREE.Mesh(
 baseDisc.position.y = FLOOR_Y + 0.02;
 chassisGroup.add(baseDisc);
 
+// 基座上沿高光圈
 const baseRim = new THREE.Mesh(
   new THREE.TorusGeometry(0.55, 0.012, 12, 96),
   new THREE.MeshStandardMaterial({ color: 0xc89d5e, roughness: 0.4, metalness: 0.6 })
@@ -272,6 +288,7 @@ baseRim.rotation.x = Math.PI / 2;
 baseRim.position.y = FLOOR_Y + 0.04;
 chassisGroup.add(baseRim);
 
+// 大型地面网格 —— 永远可见，作为写生"地面"
 let gridHelper = new THREE.GridHelper(4, 40, 0x6b6b6b, 0xbcbcbc);
 gridHelper.position.y = FLOOR_Y;
 gridHelper.material.opacity = 0.7;
@@ -279,6 +296,7 @@ gridHelper.material.transparent = true;
 gridHelper.material.depthWrite = false;
 chassisGroup.add(gridHelper);
 
+// 主网格之外再叠一层更稀疏的次级网格，模拟无限远地面
 const gridFar = new THREE.GridHelper(20, 20, 0x9c9c9c, 0xd6d6d6);
 gridFar.position.y = FLOOR_Y - 0.001;
 gridFar.material.opacity = 0.35;
@@ -286,10 +304,23 @@ gridFar.material.transparent = true;
 gridFar.material.depthWrite = false;
 chassisGroup.add(gridFar);
 
+// 坐标轴（默认隐藏）
 const axesHelper = new THREE.AxesHelper(0.3);
 axesHelper.position.y = FLOOR_Y + 0.001;
 scene.add(axesHelper);
 axesHelper.visible = false;
+
+// ============ 工具：根据模型尺寸 + 画布宽高比，计算相机需要的距离 ============
+function fitDistanceToModel(size, margin = 1.25) {
+  const fovV = camera.fov * Math.PI / 180;
+  const aspect = camera.aspect || 1;
+  // 垂直方向装下模型需要的距离
+  const distV = (size.y / 2) / Math.tan(fovV / 2);
+  // 水平方向装下模型需要的距离
+  const distH = (size.x / 2) / (Math.tan(fovV / 2) * aspect);
+  // 取较大者保证两个方向都装得下，再加 25% 留白
+  return Math.max(distV, distH, 0.5) * margin;
+}
 
 // ============ 临摹者视角（鼠标驱动相机） ============
 const view = {
@@ -342,6 +373,12 @@ function setBaseView(az, el, dist, duration) {
   view.animDur = duration;
 }
 
+// 把手动偏移叠加到目标点上
+function applyTargetOffset() {
+  if (!view.modelBox) return;
+  view.target.copy(view.modelBox.center).add(view.targetOffset);
+}
+
 canvasContainer.addEventListener('mousemove', (e) => {
   const rect = canvasContainer.getBoundingClientRect();
   const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -361,7 +398,8 @@ canvasContainer.addEventListener('mouseleave', () => {
 canvasContainer.addEventListener('wheel', (e) => {
   e.preventDefault();
   const factor = Math.exp(e.deltaY * 0.001);
-  view.baseDist = Math.max(0.4, Math.min(6, view.baseDist * factor));
+  // 上限拉到 60：很多扫描模型在 GLB 里单位很大，6 太近
+  view.baseDist = Math.max(0.3, Math.min(60, view.baseDist * factor));
 }, { passive: false });
 
 // ============ 加载模型 ============
@@ -393,14 +431,28 @@ function onModelLoaded(gltf) {
   modelRoot.position.y -= (center.y - size.y / 2) - FLOOR_Y;
   scene.add(modelRoot);
 
-  // 关键：相机目标点 = 模型平移后"实际"在世界中的中心
+  // 关键：相机目标点 = "视觉中心"（人脸的区域），不是包围盒几何中心
+  // 包围盒几何中心对半身像来说会落在胸口，脸就跑到画面上方去了
+  // 焦点高度 = 包围盒顶部往下 X%（由 focus-h 滑块控制，默认 25% = 脸的位置）
   const modelCenterY = FLOOR_Y + size.y / 2;
-  view.target.set(0, modelCenterY, 0);
+  const focusY = FLOOR_Y + size.y * 0.75; // 25% from top
+  const worldCenter = new THREE.Vector3(0, focusY, 0);
+  view.target.copy(worldCenter);
+  // 缓存给"对准中心"按钮用
+  view.modelCenterY = focusY;
+  // 包围盒信息保留 size 给"框选整个模型"用，center 用视觉焦点
+  view.modelBox = { size: size.clone(), center: worldCenter.clone(), geoCenter: new THREE.Vector3(0, modelCenterY, 0) };
+  // 缓存手动偏移量
+  view.targetOffset = new THREE.Vector3(0, 0, 0);
 
-  // 自动取景
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fov = camera.fov * Math.PI / 180;
-  const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.8;
+  // 加载完成后，重置 X/Y 滑块到 0（因为新焦点的位置已经更准了）
+  const ox = document.getElementById('offset-x');
+  const oy = document.getElementById('offset-y');
+  if (ox) { ox.value = 0; document.getElementById('offset-x-val').textContent = '0.00'; }
+  if (oy) { oy.value = 0; document.getElementById('offset-y-val').textContent = '0.00'; }
+
+  // 自动取景：根据 FOV + 画布宽高比，把整个模型装进画面
+  const dist = fitDistanceToModel(size);
   defaultCamAz = Math.PI * 0.18;
   defaultCamEl = 0.15;
   defaultCamDist = dist;
@@ -492,8 +544,91 @@ document.querySelectorAll('[data-view]').forEach((btn) => {
 });
 
 document.getElementById('reset-view').addEventListener('click', () => {
+  // 视角回正 + 重置手动偏移
+  if (view.targetOffset) view.targetOffset.set(0, 0, 0);
+  applyTargetOffset();
   setBaseView(defaultCamAz, defaultCamEl, defaultCamDist, 600);
 });
+
+// 把相机目标点平滑过渡到模型中心（不动视角），同时清零手动偏移
+document.getElementById('recenter').addEventListener('click', () => {
+  if (!view.modelBox) return;
+  // 重置偏移滑块到 0
+  if (view.targetOffset) view.targetOffset.set(0, 0, 0);
+  const ox = document.getElementById('offset-x');
+  const oy = document.getElementById('offset-y');
+  if (ox) { ox.value = 0; document.getElementById('offset-x-val').textContent = '0.00'; }
+  if (oy) { oy.value = 0; document.getElementById('offset-y-val').textContent = '0.00'; }
+  const fromX = view.target.x, fromY = view.target.y, fromZ = view.target.z;
+  const toX = view.modelBox.center.x, toY = view.modelBox.center.y, toZ = view.modelBox.center.z;
+  const t0 = performance.now();
+  const dur = 400;
+  (function step() {
+    const t = Math.min((performance.now() - t0) / dur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    view.target.set(
+      fromX + (toX - fromX) * e,
+      fromY + (toY - fromY) * e,
+      fromZ + (toZ - fromZ) * e
+    );
+    if (t < 1) requestAnimationFrame(step);
+  })();
+});
+
+// 框选整个模型：根据包围盒自动算距离 + 把目标点对准中心
+document.getElementById('frame-model').addEventListener('click', () => {
+  if (!view.modelBox) return;
+  // 重置手动偏移
+  if (view.targetOffset) view.targetOffset.set(0, 0, 0);
+  const fromTarget = view.target.clone();
+  const toTarget = view.modelBox.center.clone();
+  const fromDist = view.curDist;
+  const toDist = fitDistanceToModel(view.modelBox.size);
+  const fromAz = view.baseAz, fromEl = view.baseEl;
+  const toAz = Math.PI * 0.18, toEl = 0.15;
+  const t0 = performance.now();
+  const dur = 600;
+  (function step() {
+    const t = Math.min((performance.now() - t0) / dur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    view.target.lerpVectors(fromTarget, toTarget, e);
+    view.curDist = fromDist + (toDist - fromDist) * e;
+    view.baseDist = view.curDist;
+    view.baseAz = fromAz + (toAz - fromAz) * e;
+    view.baseEl = fromEl + (toEl - fromEl) * e;
+    if (t >= 1) {
+      // 同步到默认相机参数（让"视角回正"也回到这个合适的距离）
+      defaultCamDist = toDist;
+      defaultCamAz = toAz;
+      defaultCamEl = toEl;
+    }
+    if (t < 1) requestAnimationFrame(step);
+  })();
+});
+
+// 准星显示开关
+document.getElementById('show-reticle').addEventListener('change', (e) => {
+  const reticle = document.getElementById('tracer-reticle');
+  reticle.style.display = e.target.checked ? '' : 'none';
+});
+
+// 手动偏移滑块
+function setupOffsetSlider(id, axis) {
+  const slider = document.getElementById(id);
+  const valEl = document.getElementById(id + '-val');
+  slider.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    valEl.textContent = v.toFixed(2);
+    if (view.targetOffset) {
+      view.targetOffset[axis] = v;
+      applyTargetOffset();
+    }
+  });
+}
+setupOffsetSlider('offset-x', 'x');
+setupOffsetSlider('offset-y', 'y');
+
+
 
 // ============ 背景 ============
 document.querySelectorAll('[data-bg]').forEach((el) => {
@@ -592,7 +727,7 @@ document.getElementById('close-compare').addEventListener('click', () => {
 // ============ 鼠标视角控制 ============
 document.getElementById('tracer-view').addEventListener('change', (e) => {
   view.enabled = e.target.checked;
-  if (!e.target.checked) {
+  if (!view.enabled) {
     view.mouseTargetAz = 0;
     view.mouseTargetEl = 0;
   }
@@ -632,6 +767,17 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === 'w') document.getElementById('show-wireframe').click();
   if (k === 'g') document.getElementById('show-grid').click();
+});
+
+// 工具栏折叠/展开
+document.getElementById('toggle-sidebar').addEventListener('click', () => {
+  const app = document.getElementById('app');
+  const btn = document.getElementById('toggle-sidebar');
+  const collapsed = app.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '⇤' : '⇥';
+  btn.title = collapsed ? '展开工具栏' : '折叠工具栏';
+  // 重新计算渲染尺寸
+  setTimeout(resize, 260);
 });
 
 // ============ 自适应 ============
