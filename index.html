@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>素描临摹 · 3D 参考</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden}
+  body{font-family:'Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f3ee;color:#1a1a1a;-webkit-font-smoothing:antialiased}
+  #app{position:relative;width:100vw;height:100vh;display:grid;grid-template-columns:1fr 320px;grid-template-rows:60px 1fr;grid-template-areas:"header header" "canvas controls"}
+  @media (max-width:768px){#app{grid-template-columns:1fr;grid-template-rows:60px 1fr auto;grid-template-areas:"header" "canvas" "controls"}}
+  header{grid-area:header;padding:12px 24px;background:#1a1a1a;color:#f5f3ee;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:10}
+  header h1{font-size:18px;font-weight:500;letter-spacing:.05em}
+  header .meta{font-size:12px;opacity:.7}
+  #canvas-container{grid-area:canvas;position:relative;background:#f5f3ee;overflow:hidden}
+  #canvas-container canvas{display:block}
+  .hint{position:absolute;bottom:16px;left:16px;font-size:12px;color:#6b6b6b;pointer-events:none;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);padding:6px 12px;border-radius:16px;transition:opacity .5s;z-index:5}
+  .hint.hidden{opacity:0}
+  #controls{grid-area:controls;background:#1a1a1a;color:#e8e5dc;padding:16px;overflow-y:auto;border-left:1px solid #2a2a2a}
+  @media (max-width:768px){#controls{max-height:42vh;border-left:none;border-top:1px solid #2a2a2a}}
+  #controls section{margin-bottom:20px}
+  #controls h2{font-size:11px;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:#8a8a8a;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2a2a2a}
+  .btn-group{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  button{background:#2a2a2a;color:#e8e5dc;border:1px solid #3a3a3a;padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit;cursor:pointer;transition:all .15s}
+  button:hover{background:#3a3a3a;border-color:#5a5a5a}
+  button.active{background:#c89d5e;color:#1a1a1a;border-color:#c89d5e}
+  .label-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0 4px;font-size:12px;color:#b8b8b8}
+  .label-row .value{color:#c89d5e;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:#c89d5e}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:13px;cursor:pointer;user-select:none}
+  .toggle-row input[type=checkbox]{appearance:none;width:36px;height:20px;background:#3a3a3a;border-radius:10px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .toggle-row input[type=checkbox]::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:#f5f3ee;top:2px;left:2px;transition:transform .2s}
+  .toggle-row input[type=checkbox]:checked{background:#c89d5e}
+  .toggle-row input[type=checkbox]:checked::after{transform:translateX(16px)}
+  .color-row{display:flex;gap:6px;flex-wrap:wrap}
+  .color-swatch{width:32px;height:32px;border-radius:6px;border:2px solid #3a3a3a;cursor:pointer;transition:all .15s}
+  .color-swatch.active{border-color:#c89d5e;transform:scale(1.1)}
+  .screenshot-btn{width:100%;background:#c89d5e;color:#1a1a1a;padding:10px;font-weight:500}
+  .screenshot-btn:hover{background:#d4ad6e}
+  #file-picker{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(245,243,238,.96);backdrop-filter:blur(8px);z-index:40;padding:24px}
+  #file-picker.visible{display:flex}
+  .picker-card{background:#ffffff;padding:32px;border-radius:12px;max-width:480px;width:100%;box-shadow:0 12px 48px rgba(0,0,0,.18);border-top:4px solid #c89d5e}
+  .picker-card h3{font-size:18px;font-weight:500;margin-bottom:12px;color:#1a1a1a;display:flex;align-items:center;gap:8px}
+  .picker-card p{font-size:14px;color:#4a4a4a;line-height:1.6;margin-bottom:12px}
+  .picker-card .reason{background:#fff7e6;border-left:3px solid #c89d5e;padding:10px 12px;font-size:13px;color:#7a5a2a;border-radius:4px;margin-bottom:16px}
+  .picker-card .picker-row{display:flex;gap:8px;align-items:center;margin:16px 0 8px}
+  .picker-card input[type=file]{flex:1;font-size:13px;color:#1a1a1a;padding:8px;border:1px dashed #c89d5e;border-radius:6px;background:#fafaf5}
+  .picker-card .file-meta{font-size:12px;color:#6b6b6b}
+  .picker-card .start-server{font-size:12px;color:#6b6b6b;margin-top:16px;padding-top:16px;border-top:1px solid #e0e0e0;line-height:1.7}
+  .picker-card .start-server code{background:#f0ede5;padding:1px 5px;border-radius:3px;font-size:11px}
+  .picker-card .btn{width:100%;background:#c89d5e;color:#1a1a1a;padding:10px;font-weight:500;font-size:14px;margin-top:8px}
+  .picker-card .btn:hover{background:#d4ad6e}
+  .picker-card .btn:disabled{background:#d8d4c8;cursor:not-allowed}
+  #load-from-disk{width:100%;margin-top:6px;font-size:12px;padding:6px 10px;background:#2a2a2a;color:#e8e5dc;border:1px dashed #5a5a5a}
+  #load-from-disk:hover{background:#3a3a3a}
+  #compare-panel{position:absolute;top:16px;right:16px;width:320px;max-width:calc(100% - 32px);background:rgba(255,255,255,.96);backdrop-filter:blur(8px);padding:8px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.15);z-index:20;display:none}
+  #compare-panel.visible{display:block}
+  #compare-panel img{width:100%;display:block;border-radius:4px}
+  #compare-panel .panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;color:#6b6b6b}
+  #compare-panel .close-btn{background:transparent;color:#6b6b6b;border:none;padding:0;width:24px;height:24px;cursor:pointer;font-size:16px}
+  #loader{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#f5f3ee;z-index:30;transition:opacity .5s}
+  #loader.hidden{opacity:0;pointer-events:none}
+  .spinner{width:40px;height:40px;border:3px solid #e0d9c8;border-top-color:#c89d5e;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loader p{margin-top:16px;font-size:14px;color:#6b6b6b;text-align:center;padding:0 24px}
+  kbd{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:3px;padding:1px 5px;font-size:11px;font-family:ui-monospace,Menlo,monospace;color:#c89d5e}
+  .kbd-hint{font-size:11px;color:#8a8a8a;margin-top:8px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>素描临摹 · 3D 参考模型</h1>
+    <div class="meta">作品 No. 1 · 头像侧面</div>
+  </header>
+
+  <div id="canvas-container">
+    <div id="loader">
+      <div class="spinner"></div>
+      <p id="loader-text">正在加载模型...</p>
+    </div>
+    <div class="hint" id="hint">鼠标拖拽旋转 · 滚轮缩放 · Shift+拖拽平移</div>
+  </div>
+  <div id="file-picker">
+    <div class="picker-card">
+      <h3>📂 选择 GLB 模型文件</h3>
+      <p class="reason" id="file-picker-reason">请选择模型</p>
+      <p style="font-size:12px;color:#6b6b6b;margin-bottom:8px">默认查找：<code id="file-picker-target">model.glb</code></p>
+      <div class="picker-row">
+        <input type="file" id="file-input" accept=".glb,.gltf" />
+      </div>
+      <div class="start-server">
+        <strong>💡 想免选文件直接打开？</strong><br>
+        在本目录执行：<code>python -m http.server 8000</code><br>
+        然后浏览器打开 <code>http://localhost:8000</code><br>
+        或双击 <code>start.bat</code> 一键启动（Windows）
+      </div>
+    </div>
+  </div>
+
+  <aside id="controls">
+    <section>
+      <h2>预设视角</h2>
+      <div class="btn-group">
+        <button data-view="front">正面</button>
+        <button data-view="three-quarter">3/4 侧</button>
+        <button data-view="side">全侧</button>
+        <button data-view="three-quarter-back">3/4 后</button>
+        <button data-view="back">背面</button>
+        <button data-view="top">顶视</button>
+      </div>
+      <button data-view="reset" style="width:100%;margin-top:6px;">↻ 重置视角</button>
+      <div class="kbd-hint">快捷键：<kbd>F</kbd>正面 <kbd>S</kbd>侧 <kbd>T</kbd>顶 <kbd>R</kbd>重置 <kbd>W</kbd>线框 <kbd>G</kbd>网格</div>
+    </section>
+
+    <section>
+      <h2>背景</h2>
+      <div class="color-row" id="bg-presets">
+        <div class="color-swatch active" data-bg="#f5f3ee" style="background:#f5f3ee" title="米白"></div>
+        <div class="color-swatch" data-bg="#ffffff" style="background:#ffffff" title="纯白"></div>
+        <div class="color-swatch" data-bg="#cfcfcf" style="background:#cfcfcf" title="中性灰"></div>
+        <div class="color-swatch" data-bg="#3a3a3a" style="background:#3a3a3a" title="暗灰"></div>
+        <div class="color-swatch" data-bg="#000000" style="background:#000000" title="纯黑"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>主光源（关键光）</h2>
+      <div class="label-row"><span>水平角度</span><span class="value" id="light-azimuth-val">45°</span></div>
+      <input type="range" id="light-azimuth" min="0" max="360" value="45" />
+      <div class="label-row"><span>垂直仰角</span><span class="value" id="light-elevation-val">45°</span></div>
+      <input type="range" id="light-elevation" min="0" max="89" value="45" />
+      <div class="label-row"><span>主光强度</span><span class="value" id="light-intensity-val">1.4</span></div>
+      <input type="range" id="light-intensity" min="0" max="3" step="0.1" value="1.4" />
+      <div class="label-row"><span>环境光</span><span class="value" id="ambient-val">0.4</span></div>
+      <input type="range" id="ambient" min="0" max="2" step="0.05" value="0.4" />
+      <div class="kbd-hint">💡 主光方向决定明暗交界线，是头像写生的关键</div>
+    </section>
+
+    <section>
+      <h2>辅助显示</h2>
+      <label class="toggle-row"><span>地面网格</span><input type="checkbox" id="show-grid" /></label>
+      <label class="toggle-row"><span>线框模式</span><input type="checkbox" id="show-wireframe" /></label>
+      <label class="toggle-row"><span>坐标轴</span><input type="checkbox" id="show-axes" /></label>
+      <label class="toggle-row"><span>水平镜像</span><input type="checkbox" id="mirror" /></label>
+      <label class="toggle-row"><span>原图对比</span><input type="checkbox" id="show-compare" /></label>
+    </section>
+
+    <section>
+      <button id="load-from-disk">📁 加载其他 GLB 文件</button><button class="screenshot-btn" id="screenshot">📷 保存当前视角为 PNG</button>
+    </section>
+  </aside>
+
+  <div id="compare-panel">
+    <div class="panel-header">
+      <span>原图参考（请将原素描另存为 natural.png）</span>
+      <button class="close-btn" id="close-compare">✕</button>
+    </div>
+    <img id="compare-img" src="natural.png" alt="原图" onerror="this.style.display='none';this.parentElement.querySelector('.panel-header span').textContent='未找到 natural.png，请把它放到网站同目录下'" />
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ============ 配置（按需修改） ============
+const CONFIG = {
+  modelFile: 'model.glb',
+  originalSketch: 'natural.png',
+  title: '素描临摹 · 3D 参考模型',
+  modelNumber: 'No. 1',
+  defaultBackground: '#f5f3ee',
+};
+
+// ============ 场景 ============
+const canvasContainer = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(CONFIG.defaultBackground);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+camera.position.set(0.5, 0.2, 0.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+canvasContainer.appendChild(renderer.domElement);
+
+// IBL
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// 灯光
+const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambient);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+keyLight.position.set(0.7, 1.0, 0.7);
+scene.add(keyLight);
+
+// 网格 / 坐标轴（默认隐藏）
+const gridHelper = new THREE.GridHelper(2, 20, 0x888888, 0xcccccc);
+gridHelper.position.y = -0.4;
+scene.add(gridHelper);
+gridHelper.visible = false;
+
+const axesHelper = new THREE.AxesHelper(0.3);
+scene.add(axesHelper);
+axesHelper.visible = false;
+
+// 控制器
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 0, 0);
+controls.minDistance = 0.1;
+controls.maxDistance = 5;
+
+// ============ 加载模型 ============
+const loader = new GLTFLoader();
+let modelRoot = null;
+let defaultCamPos = new THREE.Vector3();
+let defaultTarget = new THREE.Vector3();
+
+function onModelLoaded(gltf) {
+  if (modelRoot) {
+    scene.remove(modelRoot);
+    modelRoot.traverse((o) => {
+      if (o.isMesh) {
+        o.geometry && o.geometry.dispose();
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        mats.forEach((m) => m.dispose && m.dispose());
+      }
+    });
+  }
+  modelRoot = gltf.scene;
+  const box = new THREE.Box3().setFromObject(modelRoot);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  modelRoot.position.sub(center);
+  scene.add(modelRoot);
+
+  // 自动取景
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * Math.PI / 180;
+  const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.6;
+  const dir = new THREE.Vector3(0.7, 0.3, 1).normalize();
+  camera.position.copy(dir.multiplyScalar(dist));
+  camera.lookAt(0, 0, 0);
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  defaultCamPos.copy(camera.position);
+  defaultTarget.copy(controls.target);
+
+  document.getElementById('loader').classList.add('hidden');
+}
+
+function parseModelBuffer(buffer) {
+  loader.parse(buffer, '', onModelLoaded, (err) => {
+    console.error(err);
+    document.getElementById('loader-text').innerHTML =
+      '<strong style="color:#a33">解析失败</strong><br><small>' + (err.message || err) + '</small>';
+  });
+}
+
+async function tryFetchModel() {
+  try {
+    const res = await fetch(CONFIG.modelFile, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    parseModelBuffer(buf);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function showFilePicker(reason) {
+  document.getElementById('file-picker-target').textContent = CONFIG.modelFile;
+  document.getElementById('file-picker-reason').textContent = reason;
+  document.getElementById('file-picker').classList.add('visible');
+  document.getElementById('loader').classList.add('hidden');
+}
+
+document.getElementById('file-input').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  document.getElementById('file-picker').classList.remove('visible');
+  document.getElementById('loader').classList.remove('hidden');
+  document.getElementById('loader-text').textContent =
+    '读取 ' + file.name + '（' + (file.size / 1e6).toFixed(1) + ' MB）...';
+  const reader = new FileReader();
+  reader.onload = () => parseModelBuffer(reader.result);
+  reader.onerror = () => {
+    document.getElementById('loader').classList.add('hidden');
+    showFilePicker('读取文件失败：' + reader.error);
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('load-from-disk').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+
+(async function () {
+  const ok = await tryFetchModel();
+  if (!ok) {
+    const isFile = location.protocol === 'file:';
+    const reason = isFile
+      ? '检测到 file:// 协议，浏览器禁止自动加载本地模型。请手动选择一次。'
+      : '自动加载失败，请手动选择模型文件。';
+    showFilePicker(reason);
+  } else {
+    document.getElementById('loader-text').textContent = '正在解析模型...';
+  }
+})();
+
+// ============ 预设视角 ============
+const VIEWS = {
+  front:               { pos: [0,   0.05,  1],  target: [0, 0, 0] },
+  'three-quarter':     { pos: [0.7, 0.15,  0.7],target: [0, 0, 0] },
+  side:                { pos: [1,   0.05,  0],  target: [0, 0, 0] },
+  'three-quarter-back':{ pos: [-0.7,0.15, -0.7],target: [0, 0, 0] },
+  back:                { pos: [0,   0.05, -1],  target: [0, 0, 0] },
+  top:                 { pos: [0,   1,    0.001],target: [0, 0, 0] },
+};
+
+function animateCamera(toPos, toTarget, duration = 600) {
+  const fromPos = camera.position.clone();
+  const fromTarget = controls.target.clone();
+  const t0 = performance.now();
+  const _toPos = new THREE.Vector3(...toPos);
+  const _toTarget = new THREE.Vector3(...toTarget);
+  (function step() {
+    const t = Math.min((performance.now() - t0) / duration, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    camera.position.lerpVectors(fromPos, _toPos, e);
+    controls.target.lerpVectors(fromTarget, _toTarget, e);
+    controls.update();
+    if (t < 1) requestAnimationFrame(step);
+  })();
+}
+
+document.querySelectorAll('[data-view]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const v = btn.dataset.view;
+    if (v === 'reset') {
+      animateCamera(defaultCamPos.toArray(), defaultTarget.toArray());
+    } else if (VIEWS[v]) {
+      animateCamera(VIEWS[v].pos, VIEWS[v].target);
+    }
+  });
+});
+
+// ============ 背景 ============
+document.querySelectorAll('[data-bg]').forEach((el) => {
+  el.addEventListener('click', () => {
+    scene.background = new THREE.Color(el.dataset.bg);
+    document.querySelectorAll('[data-bg]').forEach((x) => x.classList.remove('active'));
+    el.classList.add('active');
+  });
+});
+
+// ============ 灯光 ============
+function updateKeyLight() {
+  const az = parseFloat(document.getElementById('light-azimuth').value);
+  const el = parseFloat(document.getElementById('light-elevation').value);
+  const intensity = parseFloat(document.getElementById('light-intensity').value);
+  const azR = (az * Math.PI) / 180;
+  const elR = (el * Math.PI) / 180;
+  const d = 2;
+  keyLight.position.set(
+    Math.cos(elR) * Math.cos(azR) * d,
+    Math.sin(elR) * d,
+    Math.cos(elR) * Math.sin(azR) * d
+  );
+  keyLight.intensity = intensity;
+  document.getElementById('light-azimuth-val').textContent = Math.round(az) + '°';
+  document.getElementById('light-elevation-val').textContent = Math.round(el) + '°';
+  document.getElementById('light-intensity-val').textContent = intensity.toFixed(1);
+}
+['light-azimuth', 'light-elevation', 'light-intensity'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', updateKeyLight);
+});
+document.getElementById('ambient').addEventListener('input', (e) => {
+  ambient.intensity = parseFloat(e.target.value);
+  document.getElementById('ambient-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+updateKeyLight();
+
+// ============ 辅助显示 ============
+document.getElementById('show-grid').addEventListener('change', (e) => { gridHelper.visible = e.target.checked; });
+document.getElementById('show-axes').addEventListener('change', (e) => { axesHelper.visible = e.target.checked; });
+
+document.getElementById('show-wireframe').addEventListener('change', (e) => {
+  if (!modelRoot) return;
+  const wf = e.target.checked;
+  modelRoot.traverse((o) => {
+    if (o.isMesh && o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => { m.wireframe = wf; m.needsUpdate = true; });
+    }
+  });
+});
+
+document.getElementById('mirror').addEventListener('change', (e) => {
+  if (!modelRoot) return;
+  modelRoot.scale.x = e.target.checked ? -1 : 1;
+});
+
+document.getElementById('show-compare').addEventListener('change', (e) => {
+  document.getElementById('compare-panel').classList.toggle('visible', e.target.checked);
+});
+document.getElementById('close-compare').addEventListener('click', () => {
+  document.getElementById('compare-panel').classList.remove('visible');
+  document.getElementById('show-compare').checked = false;
+});
+
+// ============ 截图 ============
+document.getElementById('screenshot').addEventListener('click', () => {
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.download = 'sketch-ref-' + ts + '.png';
+  a.href = url;
+  a.click();
+});
+
+// ============ 键盘快捷键 ============
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const map = { f:'front', s:'side', t:'top', r:'reset' };
+  const k = e.key.toLowerCase();
+  if (map[k]) {
+    const btn = document.querySelector('[data-view="' + map[k] + '"]');
+    if (btn) btn.click();
+  }
+  if (k === 'w') document.getElementById('show-wireframe').click();
+  if (k === 'g') document.getElementById('show-grid').click();
+});
+
+// ============ 自适应 ============
+function resize() {
+  const r = canvasContainer.getBoundingClientRect();
+  camera.aspect = r.width / r.height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(r.width, r.height, false);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ============ 渲染循环 ============
+(function tick() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+})();
+
+// 首次交互后隐藏提示
+renderer.domElement.addEventListener('pointerdown', () => {
+  document.getElementById('hint').classList.add('hidden');
+}, { once: true });
+</script>
+</body>
+</html>

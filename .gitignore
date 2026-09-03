@@ -1,0 +1,32 @@
+# 临时文件 / 测试产物
+_*.png
+_userdata/
+*.final
+*.bak
+
+# 浏览器和 IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node（如果将来引入构建步骤）
+node_modules/
+dist/
+build/
+
+# 不上传大模型文件（每个 .glb 都是 1-20 MB，README 里说明用户自己放）
+# 注释掉下面这一行就会把 model.glb 也提交上去
+*.glb
+
+# 原始素描图（可选用）
+# natural.png
