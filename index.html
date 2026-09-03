@@ -508,20 +508,24 @@ function onModelLoaded(gltf) {
   // （加权向脸部偏移，因为脸的 Z 一般比头顶靠前）
   const modelCenterY = FLOOR_Y + size.y / 2;
   const visualCenter = findVisualCenter(modelRoot);
-  let focusY;
   let worldCenter;
   if (visualCenter) {
-    // 用算法算出的真实 X/Y/Z（不要强制 X=0，否则半身像的头会偏到一边）
-    worldCenter = visualCenter.clone();
-    focusY = visualCenter.y;
+    // 把模型平移，让视觉中心对齐世界原点 (0, 0, 0)
+    // 这样相机看原点 = 脸就在屏幕正中
+    modelRoot.position.x -= visualCenter.x;
+    modelRoot.position.y -= visualCenter.y;
+    modelRoot.position.z -= visualCenter.z;
+    // 重新算包围盒，把底面对齐到 FLOOR_Y
+    const newBox = new THREE.Box3().setFromObject(modelRoot);
+    modelRoot.position.y += (FLOOR_Y - newBox.min.y);
+    worldCenter = new THREE.Vector3(0, 0, 0);
   } else {
-    // fallback：25% 顶部
-    focusY = FLOOR_Y + size.y * 0.75;
-    worldCenter = new THREE.Vector3(0, focusY, 0);
+    // fallback
+    worldCenter = new THREE.Vector3(0, modelCenterY, 0);
   }
   view.target.copy(worldCenter);
   // 缓存
-  view.modelCenterY = focusY;
+  view.modelCenterY = worldCenter.y;
   view.modelBox = { size: size.clone(), center: worldCenter.clone(), geoCenter: new THREE.Vector3(0, modelCenterY, 0) };
   // 缓存手动偏移量
   view.targetOffset = new THREE.Vector3(0, 0, 0);
@@ -532,7 +536,8 @@ function onModelLoaded(gltf) {
   if (ox) { ox.value = 0; document.getElementById('offset-x-val').textContent = '0.00'; }
   if (oy) { oy.value = 0; document.getElementById('offset-y-val').textContent = '0.00'; }
 
-  console.log('[中心] 几何 = (0.00, ' + modelCenterY.toFixed(3) + ', 0.00)  视觉 = (' + (visualCenter ? visualCenter.x.toFixed(3) : 'n/a') + ', ' + focusY.toFixed(3) + ', ' + (visualCenter ? visualCenter.z.toFixed(3) : 'n/a') + ')');
+  const vcStr = visualCenter ? '(' + visualCenter.x.toFixed(3) + ', ' + visualCenter.y.toFixed(3) + ', ' + visualCenter.z.toFixed(3) + ')' : 'n/a';
+  console.log('[中心] 视觉 = ' + vcStr + ' → 模型已平移，脸现在在 (0, 0, 0)');
 
   // 自动取景：根据 FOV + 画布宽高比，把整个模型装进画面
   const dist = fitDistanceToModel(size);
