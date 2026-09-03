@@ -140,6 +140,9 @@
       <button id="reset-view" style="width:100%;margin-top:6px;">↻ 视角回正</button>
       <button id="recenter" style="width:100%;margin-top:6px;background:#3a2a18;border-color:#5a4530;">⊙ 对准模型中心</button>
       <button id="frame-model" style="width:100%;margin-top:6px;background:#3a2a18;border-color:#5a4530;">⛶ 框选整个模型</button>
+      <div class="label-row" style="margin-top:10px"><span>焦点高度（人物在屏幕哪里）</span><span class="value" id="focus-h-val">25%</span></div>
+      <input type="range" id="focus-h" min="0" max="60" step="1" value="25" />
+      <div class="kbd-hint" style="margin-top:4px;font-size:10px;color:#7a7a7a">0% = 头顶 · 50% = 中间 · 数值越小 = 焦点越靠上</div>
       <div class="label-row" style="margin-top:10px"><span>水平偏移 X（←左 / 右→）</span><span class="value" id="offset-x-val">0.00</span></div>
       <input type="range" id="offset-x" min="-1" max="1" step="0.01" value="0" />
       <div class="label-row"><span>垂直偏移 Y（下↓ / 上↑）</span><span class="value" id="offset-y-val">0.00</span></div>
@@ -373,11 +376,42 @@ function setBaseView(az, el, dist, duration) {
   view.animDur = duration;
 }
 
-// 把手动偏移叠加到目标点上
+// 把手动偏移（归一化值，1 = 半个可见区域）转成世界坐标，叠加到目标点上
+// 这样无论画布尺寸/相机角度怎么变，X=某个值 始终代表相同的"屏幕相对位置"
 function applyTargetOffset() {
   if (!view.modelBox) return;
-  view.target.copy(view.modelBox.center).add(view.targetOffset);
+
+  // 当前可见区域（在模型距离处）
+  const fovV = camera.fov * Math.PI / 180;
+  const dist = view.curDist;
+  const visibleHeight = 2 * dist * Math.tan(fovV / 2);
+  const visibleWidth = visibleHeight * camera.aspect;
+
+  // targetOffset 里的 x/y 是"半个可见区域"的倍数
+  // 1.0 = 把视点往右/上推半个可见区域（也就是模型视觉中心会偏到画布右半边的中点）
+  // 用户调的 "1.0" 经过 WORLD_TO_NDC 换算成归一化值
+  const worldOffsetX = view.targetOffset.x * (visibleWidth / 2) * WORLD_TO_NDC;
+  const worldOffsetY = view.targetOffset.y * (visibleHeight / 2) * WORLD_TO_NDC;
+
+  // 相机在"看向 view.target"时的右向量和上向量（世界空间）
+  // 偏移应该走在相机的屏幕平面上，而不是世界 XY 平面 —— 这样无论怎么转视角都稳定
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward); // 返回的是相机看的方向
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const camRight = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+  const camUp = new THREE.Vector3().crossVectors(camRight, forward).normalize();
+
+  view.target.copy(view.modelBox.center);
+  view.target.add(camRight.clone().multiplyScalar(worldOffsetX));
+  view.target.add(camUp.clone().multiplyScalar(worldOffsetY));
 }
+
+// 用户 X=1.0 时实际希望"模型视觉中心偏到画布中心"
+// 在窄画布里（约 visibleWidth=7.17）1 个世界单位 = 14% 半可见宽
+// 在宽画布里（约 visibleWidth=9.56）同样 1 个世界单位 = 10% 半可见宽
+// 我们把用户的"1.0"理解成"14% 半个可见宽"，这样画布变宽时世界偏移会自动变
+// 14% = 1/7.17 ≈ 0.14
+const WORLD_TO_NDC = 0.28;
 
 canvasContainer.addEventListener('mousemove', (e) => {
   const rect = canvasContainer.getBoundingClientRect();
@@ -435,7 +469,9 @@ function onModelLoaded(gltf) {
   // 包围盒几何中心对半身像来说会落在胸口，脸就跑到画面上方去了
   // 焦点高度 = 包围盒顶部往下 X%（由 focus-h 滑块控制，默认 25% = 脸的位置）
   const modelCenterY = FLOOR_Y + size.y / 2;
-  const focusY = FLOOR_Y + size.y * 0.75; // 25% from top
+  const focusSliderEl = document.getElementById('focus-h');
+  const focusPct = focusSliderEl ? (parseInt(focusSliderEl.value, 10) / 100) : 0.25;
+  const focusY = FLOOR_Y + size.y * (1 - focusPct);
   const worldCenter = new THREE.Vector3(0, focusY, 0);
   view.target.copy(worldCenter);
   // 缓存给"对准中心"按钮用
@@ -628,7 +664,27 @@ function setupOffsetSlider(id, axis) {
 setupOffsetSlider('offset-x', 'x');
 setupOffsetSlider('offset-y', 'y');
 
-
+// 焦点高度滑块：调整视觉焦点在模型顶部往下多少比例
+document.getElementById('focus-h').addEventListener('input', (e) => {
+  const pct = parseInt(e.target.value, 10);
+  document.getElementById('focus-h-val').textContent = pct + '%';
+  if (!view.modelBox) return;
+  const size = view.modelBox.size;
+  const focusPct = pct / 100;
+  const newFocusY = FLOOR_Y + size.y * (1 - focusPct);
+  // 平滑过渡到新的焦点 Y
+  const fromY = view.target.y;
+  const t0 = performance.now();
+  const dur = 300;
+  (function step() {
+    const t = Math.min((performance.now() - t0) / dur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    const y = fromY + (newFocusY - fromY) * e;
+    view.modelBox.center.y = y;
+    applyTargetOffset();
+    if (t < 1) requestAnimationFrame(step);
+  })();
+});
 
 // ============ 背景 ============
 document.querySelectorAll('[data-bg]').forEach((el) => {
