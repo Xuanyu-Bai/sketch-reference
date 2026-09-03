@@ -313,6 +313,52 @@ axesHelper.position.y = FLOOR_Y + 0.001;
 scene.add(axesHelper);
 axesHelper.visible = false;
 
+// ============ 工具：自动找模型的"视觉中心" ============
+// 思路：模型上半部分（默认 top 50%）的顶点质心，就是视觉上的"脸/头"位置
+// 这比单纯用包围盒几何中心准得多（半身像的包围盒中心在胸口）
+// 用 XZ 上"前 Z 方向偏 30% 加权"，让焦点更靠脸部（脸的 Z 一般比头顶靠前）
+function findVisualCenter(root, topFraction) {
+  topFraction = (topFraction == null) ? 0.5 : topFraction;
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const yThreshold = box.max.y - topFraction * size.y;
+  // 找 Z 的最大/最小值，用来归一化 Z 权重（让靠前的顶点贡献更大）
+  let minZ = Infinity, maxZ = -Infinity;
+  root.updateWorldMatrix(true, true);
+  const v3 = new THREE.Vector3();
+  root.traverse((obj) => {
+    if (obj.isMesh && obj.geometry && obj.geometry.attributes && obj.geometry.attributes.position) {
+      const pos = obj.geometry.attributes.position;
+      const m = obj.matrixWorld;
+      for (let i = 0; i < pos.count; i++) {
+        v3.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(m);
+        if (v3.y > yThreshold) {
+          if (v3.z < minZ) minZ = v3.z;
+          if (v3.z > maxZ) maxZ = v3.z;
+        }
+      }
+    }
+  });
+  const zRange = (maxZ - minZ) || 1;
+  let totalX = 0, totalY = 0, totalZ = 0, totalW = 0;
+  root.traverse((obj) => {
+    if (obj.isMesh && obj.geometry && obj.geometry.attributes && obj.geometry.attributes.position) {
+      const pos = obj.geometry.attributes.position;
+      const m = obj.matrixWorld;
+      for (let i = 0; i < pos.count; i++) {
+        v3.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(m);
+        if (v3.y > yThreshold) {
+          // 越靠前 (z 大) 权重越高 → 焦点偏向脸部
+          const w = 0.4 + 0.6 * ((v3.z - minZ) / zRange);
+          totalX += v3.x * w; totalY += v3.y * w; totalZ += v3.z * w; totalW += w;
+        }
+      }
+    }
+  });
+  if (totalW === 0) return null;
+  return new THREE.Vector3(totalX / totalW, totalY / totalW, totalZ / totalW);
+}
+
 // ============ 工具：根据模型尺寸 + 画布宽高比，计算相机需要的距离 ============
 function fitDistanceToModel(size, margin = 1.25) {
   const fovV = camera.fov * Math.PI / 180;
@@ -465,27 +511,37 @@ function onModelLoaded(gltf) {
   modelRoot.position.y -= (center.y - size.y / 2) - FLOOR_Y;
   scene.add(modelRoot);
 
-  // 关键：相机目标点 = "视觉中心"（人脸的区域），不是包围盒几何中心
-  // 包围盒几何中心对半身像来说会落在胸口，脸就跑到画面上方去了
-  // 焦点高度 = 包围盒顶部往下 X%（由 focus-h 滑块控制，默认 25% = 脸的位置）
+  // 关键：相机目标点 = 自动算出来的"视觉中心"，不是包围盒几何中心
+  // 半身像的包围盒中心在胸口，视觉中心（脸）在头顶
+  // 这里用"模型上半部分（默认 50%）顶点的加权质心"来找真正的视觉中心
+  // （加权向脸部偏移，因为脸的 Z 一般比头顶靠前）
   const modelCenterY = FLOOR_Y + size.y / 2;
-  const focusSliderEl = document.getElementById('focus-h');
-  const focusPct = focusSliderEl ? (parseInt(focusSliderEl.value, 10) / 100) : 0.25;
-  const focusY = FLOOR_Y + size.y * (1 - focusPct);
-  const worldCenter = new THREE.Vector3(0, focusY, 0);
+  const visualCenter = findVisualCenter(modelRoot, 0.5);
+  let focusY;
+  let worldCenter;
+  if (visualCenter) {
+    // 用算法算出的真实 X/Y/Z（不要强制 X=0，否则半身像的头会偏到一边）
+    worldCenter = visualCenter.clone();
+    focusY = visualCenter.y;
+  } else {
+    // fallback：25% 顶部
+    focusY = FLOOR_Y + size.y * 0.75;
+    worldCenter = new THREE.Vector3(0, focusY, 0);
+  }
   view.target.copy(worldCenter);
-  // 缓存给"对准中心"按钮用
+  // 缓存
   view.modelCenterY = focusY;
-  // 包围盒信息保留 size 给"框选整个模型"用，center 用视觉焦点
   view.modelBox = { size: size.clone(), center: worldCenter.clone(), geoCenter: new THREE.Vector3(0, modelCenterY, 0) };
   // 缓存手动偏移量
   view.targetOffset = new THREE.Vector3(0, 0, 0);
 
-  // 加载完成后，重置 X/Y 滑块到 0（因为新焦点的位置已经更准了）
+  // 加载完成后，重置 X/Y 滑块到 0（新焦点的位置已经更准了）
   const ox = document.getElementById('offset-x');
   const oy = document.getElementById('offset-y');
   if (ox) { ox.value = 0; document.getElementById('offset-x-val').textContent = '0.00'; }
   if (oy) { oy.value = 0; document.getElementById('offset-y-val').textContent = '0.00'; }
+
+  console.log('[中心] 几何 = (0.00, ' + modelCenterY.toFixed(3) + ', 0.00)  视觉 = (' + (visualCenter ? visualCenter.x.toFixed(3) : 'n/a') + ', ' + focusY.toFixed(3) + ', ' + (visualCenter ? visualCenter.z.toFixed(3) : 'n/a') + ')');
 
   // 自动取景：根据 FOV + 画布宽高比，把整个模型装进画面
   const dist = fitDistanceToModel(size);
