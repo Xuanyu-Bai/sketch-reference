@@ -16,10 +16,21 @@
   header{grid-area:header;padding:12px 24px;background:#1a1a1a;color:#f5f3ee;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:10}
   header h1{font-size:18px;font-weight:500;letter-spacing:.05em}
   header .meta{font-size:12px;opacity:.7}
-  #canvas-container{grid-area:canvas;position:relative;background:#f5f3ee;overflow:hidden}
+  #canvas-container{grid-area:canvas;position:relative;background:#f5f3ee;overflow:hidden;cursor:crosshair}
   #canvas-container canvas{display:block}
   .hint{position:absolute;bottom:16px;left:16px;font-size:12px;color:#6b6b6b;pointer-events:none;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);padding:6px 12px;border-radius:16px;transition:opacity .5s;z-index:5}
   .hint.hidden{opacity:0}
+  .tracer-reticle{position:absolute;top:50%;left:50%;width:34px;height:34px;transform:translate(-50%,-50%);border:1.5px solid rgba(200,157,94,.55);border-radius:50%;pointer-events:none;z-index:4;opacity:0;transition:opacity .3s}
+  .tracer-reticle::before,.tracer-reticle::after{content:"";position:absolute;background:rgba(200,157,94,.55)}
+  .tracer-reticle::before{left:50%;top:-6px;width:1px;height:8px;transform:translateX(-50%)}
+  .tracer-reticle::after{left:50%;bottom:-6px;width:1px;height:8px;transform:translateX(-50%)}
+  .tracer-reticle .h{position:absolute;top:50%;width:8px;height:1px;background:rgba(200,157,94,.55);transform:translateY(-50%)}
+  .tracer-reticle .h.l{left:-6px}.tracer-reticle .h.r{right:-6px}
+  .tracer-reticle.active{opacity:1}
+  .view-indicator{position:absolute;top:16px;left:16px;background:rgba(26,26,26,.85);color:#f5f3ee;backdrop-filter:blur(8px);padding:8px 12px;border-radius:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;pointer-events:none;z-index:5;letter-spacing:.05em}
+  .view-indicator .row{display:flex;justify-content:space-between;gap:16px}
+  .view-indicator .k{color:#8a8a8a}
+  .view-indicator .v{color:#c89d5e;font-variant-numeric:tabular-nums}
   #controls{grid-area:controls;background:#1a1a1a;color:#e8e5dc;padding:16px;overflow-y:auto;border-left:1px solid #2a2a2a}
   @media (max-width:768px){#controls{max-height:42vh;border-left:none;border-top:1px solid #2a2a2a}}
   #controls section{margin-bottom:20px}
@@ -83,7 +94,13 @@
       <div class="spinner"></div>
       <p id="loader-text">正在加载模型...</p>
     </div>
-    <div class="hint" id="hint">鼠标拖拽旋转 · 滚轮缩放 · Shift+拖拽平移</div>
+    <div class="tracer-reticle" id="tracer-reticle"><span class="h l"></span><span class="h r"></span></div>
+    <div class="view-indicator" id="view-indicator">
+      <div class="row"><span class="k">方位</span><span class="v" id="vi-az">0°</span></div>
+      <div class="row"><span class="k">仰角</span><span class="v" id="vi-el">0°</span></div>
+      <div class="row"><span class="k">距离</span><span class="v" id="vi-dist">0.0</span></div>
+    </div>
+    <div class="hint" id="hint">移动鼠标 → 视角随目光转动 · 滚轮缩放 · 移出画布自动回正</div>
   </div>
   <div id="file-picker">
     <div class="picker-card">
@@ -104,6 +121,31 @@
 
   <aside id="controls">
     <section>
+      <h2>临摹者视角</h2>
+      <label class="toggle-row"><span>启用鼠标视角</span><input type="checkbox" id="tracer-view" checked /></label>
+      <div class="label-row"><span>灵敏度</span><span class="value" id="sensitivity-val">60%</span></div>
+      <input type="range" id="sensitivity" min="10" max="100" value="60" />
+      <div class="label-row"><span>摆动范围</span><span class="value" id="range-val">70%</span></div>
+      <input type="range" id="range-slider" min="20" max="100" value="70" />
+      <div class="label-row"><span>阻尼（惯性）</span><span class="value" id="damping-val">0.10</span></div>
+      <input type="range" id="damping" min="3" max="30" value="10" />
+      <button id="reset-view" style="width:100%;margin-top:6px;">↻ 视角回正</button>
+      <div class="kbd-hint">💡 鼠标在画布上滑动 = 临摹者头部轻摆，目光掠过模型各部位</div>
+    </section>
+
+    <section>
+      <h2>底盘（地面）</h2>
+      <label class="toggle-row"><span>显示底盘网格</span><input type="checkbox" id="show-grid" checked /></label>
+      <label class="toggle-row"><span>显示圆形基座</span><input type="checkbox" id="show-base" checked /></label>
+      <label class="toggle-row"><span>显示坐标轴</span><input type="checkbox" id="show-axes" /></label>
+      <div class="label-row"><span>底盘大小</span><span class="value" id="grid-size-val">4.0</span></div>
+      <input type="range" id="grid-size" min="1.5" max="8" step="0.5" value="4" />
+      <div class="label-row"><span>网格不透明度</span><span class="value" id="grid-opacity-val">70%</span></div>
+      <input type="range" id="grid-opacity" min="20" max="100" value="70" />
+      <div class="kbd-hint">底盘固定不动，模型稳稳立在上面</div>
+    </section>
+
+    <section>
       <h2>预设视角</h2>
       <div class="btn-group">
         <button data-view="front">正面</button>
@@ -113,8 +155,7 @@
         <button data-view="back">背面</button>
         <button data-view="top">顶视</button>
       </div>
-      <button data-view="reset" style="width:100%;margin-top:6px;">↻ 重置视角</button>
-      <div class="kbd-hint">快捷键：<kbd>F</kbd>正面 <kbd>S</kbd>侧 <kbd>T</kbd>顶 <kbd>R</kbd>重置 <kbd>W</kbd>线框 <kbd>G</kbd>网格</div>
+      <div class="kbd-hint">快捷键：<kbd>F</kbd>正面 <kbd>S</kbd>侧 <kbd>T</kbd>顶 <kbd>R</kbd>回正 <kbd>W</kbd>线框</div>
     </section>
 
     <section>
@@ -143,9 +184,7 @@
 
     <section>
       <h2>辅助显示</h2>
-      <label class="toggle-row"><span>地面网格</span><input type="checkbox" id="show-grid" /></label>
       <label class="toggle-row"><span>线框模式</span><input type="checkbox" id="show-wireframe" /></label>
-      <label class="toggle-row"><span>坐标轴</span><input type="checkbox" id="show-axes" /></label>
       <label class="toggle-row"><span>水平镜像</span><input type="checkbox" id="mirror" /></label>
       <label class="toggle-row"><span>原图对比</span><input type="checkbox" id="show-compare" /></label>
     </section>
@@ -176,7 +215,6 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // ============ 配置（按需修改） ============
@@ -194,7 +232,6 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(CONFIG.defaultBackground);
 
 const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
-camera.position.set(0.5, 0.2, 0.5);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -203,7 +240,7 @@ renderer.toneMappingExposure = 1.0;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 canvasContainer.appendChild(renderer.domElement);
 
-// IBL
+// IBL：让有贴图的模型更有质感
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -215,29 +252,124 @@ const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
 keyLight.position.set(0.7, 1.0, 0.7);
 scene.add(keyLight);
 
-// 网格 / 坐标轴（默认隐藏）
-const gridHelper = new THREE.GridHelper(2, 20, 0x888888, 0xcccccc);
-gridHelper.position.y = -0.4;
-scene.add(gridHelper);
-gridHelper.visible = false;
+// ============ 底盘（永远固定，模型站在上面） ============
+const FLOOR_Y = -0.5;
+const chassisGroup = new THREE.Group();
+scene.add(chassisGroup);
+
+const baseDisc = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.55, 0.6, 0.04, 64),
+  new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.55, metalness: 0.15 })
+);
+baseDisc.position.y = FLOOR_Y + 0.02;
+chassisGroup.add(baseDisc);
+
+const baseRim = new THREE.Mesh(
+  new THREE.TorusGeometry(0.55, 0.012, 12, 96),
+  new THREE.MeshStandardMaterial({ color: 0xc89d5e, roughness: 0.4, metalness: 0.6 })
+);
+baseRim.rotation.x = Math.PI / 2;
+baseRim.position.y = FLOOR_Y + 0.04;
+chassisGroup.add(baseRim);
+
+let gridHelper = new THREE.GridHelper(4, 40, 0x6b6b6b, 0xbcbcbc);
+gridHelper.position.y = FLOOR_Y;
+gridHelper.material.opacity = 0.7;
+gridHelper.material.transparent = true;
+gridHelper.material.depthWrite = false;
+chassisGroup.add(gridHelper);
+
+const gridFar = new THREE.GridHelper(20, 20, 0x9c9c9c, 0xd6d6d6);
+gridFar.position.y = FLOOR_Y - 0.001;
+gridFar.material.opacity = 0.35;
+gridFar.material.transparent = true;
+gridFar.material.depthWrite = false;
+chassisGroup.add(gridFar);
 
 const axesHelper = new THREE.AxesHelper(0.3);
+axesHelper.position.y = FLOOR_Y + 0.001;
 scene.add(axesHelper);
 axesHelper.visible = false;
 
-// 控制器
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.target.set(0, 0, 0);
-controls.minDistance = 0.1;
-controls.maxDistance = 5;
+// ============ 临摹者视角（鼠标驱动相机） ============
+const view = {
+  enabled: true,
+  baseAz: Math.PI * 0.18,
+  baseEl: 0.18,
+  baseDist: 1.6,
+  mouseAz: 0,
+  mouseEl: 0,
+  mouseTargetAz: 0,
+  mouseTargetEl: 0,
+  sensitivity: 0.6,
+  range: 0.7,
+  damping: 0.10,
+  curAz: Math.PI * 0.18,
+  curEl: 0.18,
+  curDist: 1.6,
+  target: new THREE.Vector3(0, 0, 0),
+  animating: false,
+  animFrom: null,
+  animTo: null,
+  animT0: 0,
+  animDur: 600,
+};
+
+function applyCameraFromAngles() {
+  const az = view.curAz;
+  const el = view.curEl;
+  const d = view.curDist;
+  camera.position.set(
+    Math.sin(az) * Math.cos(el) * d,
+    Math.sin(el) * d + view.target.y,
+    Math.cos(az) * Math.cos(el) * d
+  );
+  camera.lookAt(view.target);
+}
+
+function setBaseView(az, el, dist, duration) {
+  duration = duration || 0;
+  if (duration <= 0) {
+    view.baseAz = az; view.baseEl = el; view.baseDist = dist;
+    view.curAz = az; view.curEl = el; view.curDist = dist;
+    view.animating = false;
+    return;
+  }
+  view.animating = true;
+  view.animFrom = { az: view.curAz, el: view.curEl, dist: view.curDist };
+  view.animTo = { az: az, el: el, dist: dist };
+  view.animT0 = performance.now();
+  view.animDur = duration;
+}
+
+canvasContainer.addEventListener('mousemove', (e) => {
+  const rect = canvasContainer.getBoundingClientRect();
+  const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+  const maxAngle = view.range * 0.9;
+  view.mouseTargetAz = nx * maxAngle * view.sensitivity;
+  view.mouseTargetEl = ny * maxAngle * view.sensitivity * 0.6;
+  document.getElementById('tracer-reticle').classList.add('active');
+});
+
+canvasContainer.addEventListener('mouseleave', () => {
+  view.mouseTargetAz = 0;
+  view.mouseTargetEl = 0;
+  document.getElementById('tracer-reticle').classList.remove('active');
+});
+
+canvasContainer.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = Math.exp(e.deltaY * 0.001);
+  view.baseDist = Math.max(0.4, Math.min(6, view.baseDist * factor));
+}, { passive: false });
 
 // ============ 加载模型 ============
 const loader = new GLTFLoader();
 let modelRoot = null;
-let defaultCamPos = new THREE.Vector3();
-let defaultTarget = new THREE.Vector3();
+let defaultCamAz = view.baseAz;
+let defaultCamEl = view.baseEl;
+let defaultCamDist = view.baseDist;
 
 function onModelLoaded(gltf) {
   if (modelRoot) {
@@ -254,21 +386,25 @@ function onModelLoaded(gltf) {
   const box = new THREE.Box3().setFromObject(modelRoot);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
-  modelRoot.position.sub(center);
+
+  // 把模型降到底盘上（模型底部贴齐 FLOOR_Y）
+  modelRoot.position.x -= center.x;
+  modelRoot.position.z -= center.z;
+  modelRoot.position.y -= (center.y - size.y / 2) - FLOOR_Y;
   scene.add(modelRoot);
+
+  // 关键：相机目标点 = 模型平移后"实际"在世界中的中心
+  const modelCenterY = FLOOR_Y + size.y / 2;
+  view.target.set(0, modelCenterY, 0);
 
   // 自动取景
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = camera.fov * Math.PI / 180;
-  const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.6;
-  const dir = new THREE.Vector3(0.7, 0.3, 1).normalize();
-  camera.position.copy(dir.multiplyScalar(dist));
-  camera.lookAt(0, 0, 0);
-  controls.target.set(0, 0, 0);
-  controls.update();
-
-  defaultCamPos.copy(camera.position);
-  defaultTarget.copy(controls.target);
+  const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.8;
+  defaultCamAz = Math.PI * 0.18;
+  defaultCamEl = 0.15;
+  defaultCamDist = dist;
+  setBaseView(defaultCamAz, defaultCamEl, defaultCamDist, 0);
 
   document.getElementById('loader').classList.add('hidden');
 }
@@ -333,41 +469,30 @@ document.getElementById('load-from-disk').addEventListener('click', () => {
   }
 })();
 
-// ============ 预设视角 ============
+// ============ 预设视角（以球坐标设置） ============
 const VIEWS = {
-  front:               { pos: [0,   0.05,  1],  target: [0, 0, 0] },
-  'three-quarter':     { pos: [0.7, 0.15,  0.7],target: [0, 0, 0] },
-  side:                { pos: [1,   0.05,  0],  target: [0, 0, 0] },
-  'three-quarter-back':{ pos: [-0.7,0.15, -0.7],target: [0, 0, 0] },
-  back:                { pos: [0,   0.05, -1],  target: [0, 0, 0] },
-  top:                 { pos: [0,   1,    0.001],target: [0, 0, 0] },
+  front:                { az: 0,                el: 0.08, distScale: 1.0  },
+  'three-quarter':      { az: Math.PI * 0.18,   el: 0.15, distScale: 1.0  },
+  side:                 { az: Math.PI * 0.5,    el: 0.08, distScale: 1.0  },
+  'three-quarter-back': { az: Math.PI * 0.82,   el: 0.15, distScale: 1.0  },
+  back:                 { az: Math.PI,          el: 0.08, distScale: 1.0  },
+  top:                  { az: 0.001,            el: Math.PI * 0.42, distScale: 1.2 },
 };
-
-function animateCamera(toPos, toTarget, duration = 600) {
-  const fromPos = camera.position.clone();
-  const fromTarget = controls.target.clone();
-  const t0 = performance.now();
-  const _toPos = new THREE.Vector3(...toPos);
-  const _toTarget = new THREE.Vector3(...toTarget);
-  (function step() {
-    const t = Math.min((performance.now() - t0) / duration, 1);
-    const e = 1 - Math.pow(1 - t, 3);
-    camera.position.lerpVectors(fromPos, _toPos, e);
-    controls.target.lerpVectors(fromTarget, _toTarget, e);
-    controls.update();
-    if (t < 1) requestAnimationFrame(step);
-  })();
-}
 
 document.querySelectorAll('[data-view]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const v = btn.dataset.view;
     if (v === 'reset') {
-      animateCamera(defaultCamPos.toArray(), defaultTarget.toArray());
+      setBaseView(defaultCamAz, defaultCamEl, defaultCamDist, 600);
     } else if (VIEWS[v]) {
-      animateCamera(VIEWS[v].pos, VIEWS[v].target);
+      const c = VIEWS[v];
+      setBaseView(c.az, c.el, defaultCamDist * c.distScale, 600);
     }
   });
+});
+
+document.getElementById('reset-view').addEventListener('click', () => {
+  setBaseView(defaultCamAz, defaultCamEl, defaultCamDist, 600);
 });
 
 // ============ 背景 ============
@@ -406,9 +531,39 @@ document.getElementById('ambient').addEventListener('input', (e) => {
 });
 updateKeyLight();
 
-// ============ 辅助显示 ============
-document.getElementById('show-grid').addEventListener('change', (e) => { gridHelper.visible = e.target.checked; });
+// ============ 底盘 / 网格 / 基座 控制 ============
+document.getElementById('show-grid').addEventListener('change', (e) => {
+  gridHelper.visible = e.target.checked;
+  gridFar.visible = e.target.checked;
+});
+document.getElementById('show-base').addEventListener('change', (e) => {
+  baseDisc.visible = e.target.checked;
+  baseRim.visible = e.target.checked;
+});
 document.getElementById('show-axes').addEventListener('change', (e) => { axesHelper.visible = e.target.checked; });
+
+document.getElementById('grid-size').addEventListener('input', (e) => {
+  const size = parseFloat(e.target.value);
+  document.getElementById('grid-size-val').textContent = size.toFixed(1);
+  chassisGroup.remove(gridHelper);
+  const divs = Math.max(8, Math.round(size * 10));
+  const newGrid = new THREE.GridHelper(size, divs, 0x6b6b6b, 0xbcbcbc);
+  newGrid.position.y = FLOOR_Y;
+  const op = parseInt(document.getElementById('grid-opacity').value, 10) / 100;
+  newGrid.material.opacity = op * 0.9;
+  newGrid.material.transparent = true;
+  newGrid.material.depthWrite = false;
+  newGrid.visible = document.getElementById('show-grid').checked;
+  chassisGroup.add(newGrid);
+  gridHelper = newGrid;
+});
+
+document.getElementById('grid-opacity').addEventListener('input', (e) => {
+  const v = parseInt(e.target.value, 10) / 100;
+  document.getElementById('grid-opacity-val').textContent = Math.round(v * 100) + '%';
+  gridHelper.material.opacity = v * 0.9;
+  gridFar.material.opacity = v * 0.5;
+});
 
 document.getElementById('show-wireframe').addEventListener('change', (e) => {
   if (!modelRoot) return;
@@ -432,6 +587,27 @@ document.getElementById('show-compare').addEventListener('change', (e) => {
 document.getElementById('close-compare').addEventListener('click', () => {
   document.getElementById('compare-panel').classList.remove('visible');
   document.getElementById('show-compare').checked = false;
+});
+
+// ============ 鼠标视角控制 ============
+document.getElementById('tracer-view').addEventListener('change', (e) => {
+  view.enabled = e.target.checked;
+  if (!e.target.checked) {
+    view.mouseTargetAz = 0;
+    view.mouseTargetEl = 0;
+  }
+});
+document.getElementById('sensitivity').addEventListener('input', (e) => {
+  view.sensitivity = parseInt(e.target.value, 10) / 100;
+  document.getElementById('sensitivity-val').textContent = Math.round(view.sensitivity * 100) + '%';
+});
+document.getElementById('range-slider').addEventListener('input', (e) => {
+  view.range = parseInt(e.target.value, 10) / 100;
+  document.getElementById('range-val').textContent = Math.round(view.range * 100) + '%';
+});
+document.getElementById('damping').addEventListener('input', (e) => {
+  view.damping = parseInt(e.target.value, 10) / 100;
+  document.getElementById('damping-val').textContent = view.damping.toFixed(2);
 });
 
 // ============ 截图 ============
@@ -469,14 +645,52 @@ window.addEventListener('resize', resize);
 resize();
 
 // ============ 渲染循环 ============
-(function tick() {
-  controls.update();
+const viAz = document.getElementById('vi-az');
+const viEl = document.getElementById('vi-el');
+const viDist = document.getElementById('vi-dist');
+
+function tick() {
+  if (view.enabled) {
+    const d = view.damping;
+    view.mouseAz += (view.mouseTargetAz - view.mouseAz) * d;
+    view.mouseEl += (view.mouseTargetEl - view.mouseEl) * d;
+  } else {
+    view.mouseAz += (0 - view.mouseAz) * view.damping;
+    view.mouseEl += (0 - view.mouseEl) * view.damping;
+  }
+
+  if (view.animating) {
+    const t = Math.min((performance.now() - view.animT0) / view.animDur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    view.curAz = view.animFrom.az + (view.animTo.az - view.animFrom.az) * e;
+    view.curEl = view.animFrom.el + (view.animTo.el - view.animFrom.el) * e;
+    view.curDist = view.animFrom.dist + (view.animTo.dist - view.animFrom.dist) * e;
+    if (t >= 1) {
+      view.animating = false;
+      view.baseAz = view.curAz;
+      view.baseEl = view.curEl;
+      view.baseDist = view.curDist;
+    }
+  } else {
+    view.curAz = view.baseAz + view.mouseAz;
+    view.curEl = view.baseEl + view.mouseEl;
+    view.curDist = view.baseDist;
+  }
+
+  applyCameraFromAngles();
+
+  let azDeg = (view.curAz * 180 / Math.PI) % 360;
+  if (azDeg < 0) azDeg += 360;
+  viAz.textContent = Math.round(azDeg) + '°';
+  viEl.textContent = Math.round(view.curEl * 180 / Math.PI) + '°';
+  viDist.textContent = view.curDist.toFixed(2);
+
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
-})();
+}
+tick();
 
-// 首次交互后隐藏提示
-renderer.domElement.addEventListener('pointerdown', () => {
+canvasContainer.addEventListener('mouseenter', () => {
   document.getElementById('hint').classList.add('hidden');
 }, { once: true });
 </script>
