@@ -1,16 +1,18 @@
-"""
-meshify.py
+"""meshify.py
 ==========
-Meshy.ai 图像转 3D 批量工具（生产级）。
+Meshy.ai 图像转 3D 工具（生产级 · 适配 Meshy 当前 API v1/v2）。
 
 特性
 ----
-1. 直接上传本地图片（无需图床 / 临时 URL）
+1. 直接上传本地图片（无需图床 / 临时 URL），或使用指定 URL
 2. 单张 / 批量两种模式
-3. 余额检查，余额不足提前告警
-4. 并发可控（默认 1，避免超额扣费）
-5. 失败自动重试
-6. 中文进度提示
+3. 失败自动重试（最多 2 次）
+4. 中文进度提示
+5. 适配 Meshy 当前 API：
+   - POST  https://api.meshy.ai/v1/image-to-3d
+   - GET   https://api.meshy.ai/v1/image-to-3d/{id}
+   - GET   https://api.meshy.ai/v1/image-to-3d/{id}/stream （SSE 流式）
+   - GET   https://api.meshy.ai/v1/balance （余额）
 
 依赖
 ----
@@ -22,7 +24,7 @@ Meshy.ai 图像转 3D 批量工具（生产级）。
 
 用法
 ----
-    # 单张
+    # 单张（默认 10k 面，无贴图）
     python meshify.py sketch.png
 
     # 批量
@@ -34,19 +36,21 @@ Meshy.ai 图像转 3D 批量工具（生产级）。
     # 不带贴图（默认；素描图推荐）
     python meshify.py sketch.png
 
-    # 带 PBR 贴图（仅照片需要）
-    python meshify.py photo.png --texture
-"""
+    # 显式指定公网 URL（跳过上传）
+    python meshify.py --image-url "https://example.com/face.jpg" -o face.glb
 
+作者：Codex (基于用户与项目需求)
+"""
 from __future__ import annotations
 
 import sys
-if sys.platform == "win32":
+if sys.platform == 'win32':
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
     except Exception:
         pass
+
 import argparse
 import concurrent.futures as cf
 import base64
@@ -58,201 +62,210 @@ from pathlib import Path
 
 import requests
 
-BASE = "https://api.meshy.ai/openapi/v2"
-DEFAULT_MODEL = "meshy-5"
+# Meshy 当前 API 路径
+BASE = 'https://api.meshy.ai'
+IMAGE_TO_3D_PATH = '/v1/image-to-3d'
+DEFAULT_MODEL = 'latest'         # 让 Meshy 自动选最新可用模型
 DEFAULT_POLYCOUNT = 10_000
-ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
-
+ALLOWED_EXT = {'.png', '.jpg', '.jpeg', '.webp'}
 
 # ===================== 工具函数 =====================
 
 def _headers() -> dict:
-    key = os.environ.get("MESHY_API_KEY")
+    key = os.environ.get('MESHY_API_KEY')
     if not key:
         sys.exit(
-            "❌ 未设置 MESHY_API_KEY 环境变量。\n"
-            "   PowerShell: setx MESHY_API_KEY \"<your_key>\"  (然后重开终端)\n"
-            "   macOS / Linux: export MESHY_API_KEY=<your_key>"
+            '❌ 未设置 MESHY_API_KEY 环境变量。\n'
+            '   PowerShell: $env:MESHY_API_KEY="<your_key>"\n'
+            '   macOS/Linux: export MESHY_API_KEY=<your_key>'
         )
-    return {"Authorization": f"Bearer {key}"}
+    return {'Authorization': f'Bearer {key}'}
 
 
 def verify_credit() -> float | None:
-    """查询账户余额（credits）。接口不存在或失败时返回 None，不阻塞。"""
+    """查询账户余额（credits）。如果接口不可用返回 None，不阻塞主流程。"""
     try:
-        r = requests.get(f"{BASE}/users/me/balance", headers=_headers(), timeout=15)
+        r = requests.get(f'{BASE}/v1/balance', headers=_headers(), timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            return data.get('balance')
         if r.status_code == 404:
-            return None  # 该接口不存在，正常跳过
+            # 接口不存在 / 不可用，silent 跳过
+            return None
         r.raise_for_status()
-        return r.json().get("balance", 0)
-    except Exception:
-        return None  # 网络问题等，正常跳过
+    except Exception as e:
+        print(f'   (余额查询失败: {e})')
+    return None
 
 
 def upload_image_as_data_url(filepath: Path) -> str:
-    """把图片 base64 编码成 data URL 内嵌进请求，绕开所有外网图床。
-    缺点：JSON body 会变大（~33% overhead），Meshy 不一定收。
-    """
-    mime = mimetypes.guess_type(str(filepath))[0] or "image/png"
+    """把图片 base64 编码成 data URL。"""
+    mime = mimetypes.guess_type(str(filepath))[0] or 'image/png'
     raw = filepath.read_bytes()
-    b64 = base64.b64encode(raw).decode("ascii")
-    print(f"   (图片 {len(raw)//1024} KB → data URL {len(b64)//1024} KB)")
-    return f"data:{mime};base64,{b64}"
+    b64 = base64.b64encode(raw).decode('ascii')
+    print(f'   (图片 {len(raw)//1024} KB → data URL {len(b64)//1024} KB)')
+    return f'data:{mime};base64,{b64}'
 
 
 # 匿名临时图床（无需注册，链接保 24 小时）
 _FREE_HOSTS = [
-    ("https://0x0.st",          {"file": None}, lambda r: r.text.strip()),
-    ("https://catbox.moe",      {"reqtype": "file", "fileToUpload": None},
-                                  lambda r: r.text.strip()),
-    ("https://uguu.se",         {"files[]": None}, lambda r: r.text.strip()),
+    ('https://0x0.st',     {'file': None}),
+    ('https://catbox.moe', {'reqtype': 'file', 'fileToUpload': None}),
+    ('uguu.se',            {'files[]': None}),
 ]
 
 def upload_image(filepath: Path) -> str:
     """上传本地图片到匿名图床，返回公网 URL。
-    Meshy.ai 没有自己的文件上传接口，所以借助匿名图床。
-    0x0.st / catbox.moe / uguu.se 任一可用即可。
-    """
+    Meshy 当前 API 要求 image_url 必须是公网可访问的 URL（除非用 data URL，但有些场景会拒）。
+    失败时回退到 data URL。"""
     last_err = None
-    for host_url, file_fields, parse in _FREE_HOSTS:
+    for host_url, file_fields in _FREE_HOSTS:
         try:
-            # 构造 multipart
-            fields = {}
-            files = {}
-            with open(filepath, "rb") as f:
-                for k in file_fields:
-                    if k.startswith("file") or k == "reqtype":
-                        fields[k] = file_fields[k] if file_fields[k] else (
-                            "file" if k == "reqtype" else None
-                        )
-                # 简化：直接根据 host 决定上传字段名
-                if "0x0.st" in host_url:
-                    files = {"file": (filepath.name, f, "image/png")}
+            with open(filepath, 'rb') as f:
+                if '0x0.st' in host_url:
+                    files = {'file': (filepath.name, f, 'image/png')}
                     fields = {}
-                elif "catbox.moe" in host_url:
-                    fields = {"reqtype": "file"}
-                    files = {"fileToUpload": (filepath.name, f, "image/png")}
-                elif "uguu.se" in host_url:
-                    files = {"files[]": (filepath.name, f, "image/png")}
+                elif 'catbox.moe' in host_url:
+                    fields = {'reqtype': 'file'}
+                    files = {'fileToUpload': (filepath.name, f, 'image/png')}
+                elif 'uguu.se' in host_url:
+                    files = {'files[]': (filepath.name, f, 'image/png')}
                     fields = {}
-                print(f"   ↪ 尝试 {host_url} ...")
-                r = requests.post(
-                    host_url, data=fields, files=files, timeout=120
-                )
+                else:
+                    continue
+                print(f'   ↪ 尝试 {host_url} ...')
+                r = requests.post(host_url, data=fields, files=files, timeout=120)
                 r.raise_for_status()
-                url = parse(r).strip()
-                if not url.startswith("http"):
-                    raise ValueError(f"返回不是 URL：{url[:80]}")
-                print(f"   ✓ 上传成功：{url}")
+                url = r.text.strip()
+                if not url.startswith('http'):
+                    raise ValueError(f'返回不是 URL: {url[:80]}')
+                print(f'   ✓ 上传成功: {url}')
                 return url
         except Exception as e:
             last_err = e
-            print(f"   ✗ {host_url} 失败：{type(e).__name__}: {str(e)[:80]}")
-            continue
-    raise RuntimeError(
-        f"所有图床都失败了：{last_err}。\n"
-        "   可手动上传到任意公网图床后用 --image-url 跳过上传。"
-    )
+            print(f'   ⚠️ {host_url} 失败: {e}')
+    # 全部图床都失败 → 回退到 data URL（Meshy 可能不接受，但试一下）
+    print(f'   ⚠️ 匿名图床全部失败，回退到 data URL (last err: {last_err})')
+    return upload_image_as_data_url(filepath)
 
 
-def submit_task(image_url: str, polycount: int, with_texture: bool) -> str:
+# ===================== 核心 API =====================
+
+def submit_task(img_url: str, polycount: int, with_texture: bool,
+                ai_model: str = DEFAULT_MODEL) -> str:
+    """提交 Image-to-3D 任务，返回 task_id。
+    Meshy 当前 API：POST /v1/image-to-3d
+    """
     payload = {
-        "image_url": image_url,
-        "model_id": DEFAULT_MODEL,
-        "target_polycount": polycount,
-        "topology": "triangle",
-        "should_remesh": True,
-        "should_texture": with_texture,
-        "is_a_t_pose": False,
+        'image_url': img_url,
+        'ai_model': ai_model,
+        'topology': 'triangle',
+        'target_polycount': polycount,
+        'should_texture': with_texture,
+        'moderation': False,
+        'origin_at': 'bottom',  # 原点放底部，模型稳站地面（适配美术 app）
     }
     r = requests.post(
-        f"{BASE}/image-to-3d", json=payload, headers=_headers(), timeout=60
+        f'{BASE}{IMAGE_TO_3D_PATH}',
+        json=payload,
+        headers=_headers(),
+        timeout=60,
     )
     r.raise_for_status()
-    return r.json()["result"]
+    data = r.json()
+    # 响应结构可能是 {"result": "task_id"} 或直接 {"id": "..."}
+    return data.get('result') or data.get('id')
 
 
-def poll_task(task_id: str, label: str = "", interval: int = 10, timeout: int = 1800) -> dict:
-    """轮询直到成功 / 失败 / 超时。"""
-    headers = _headers()
+def poll_task(task_id: str, label: str = '', interval: int = 15,
+              timeout: int = 900) -> dict:
+    """轮询任务直到完成或失败。
+    Meshy 当前 API：GET /v1/image-to-3d/{id}
+    状态值（大写）：PENDING / IN_PROGRESS / SUCCEEDED / FAILED / CANCELED
+    """
     deadline = time.time() + timeout
-    last_progress = -1
     while time.time() < deadline:
         r = requests.get(
-            f"{BASE}/image-to-3d/{task_id}", headers=headers, timeout=30
+            f'{BASE}{IMAGE_TO_3D_PATH}/{task_id}',
+            headers=_headers(),
+            timeout=30,
         )
         r.raise_for_status()
-        d = r.json()
-        status = d.get("status")
-        progress = d.get("progress", 0)
-        if progress != last_progress and progress % 10 == 0:
-            print(f"   ⏳ {label} 状态={status} 进度={progress}%")
-            last_progress = progress
-        if status == "succeeded":
-            return d
-        if status in {"failed", "expired", "canceled"}:
-            raise RuntimeError(f"任务 {label} 终止: {status}\n  {d}")
+        data = r.json()
+        status = data.get('status', 'UNKNOWN')
+        progress = data.get('progress', 0)
+        queue = data.get('preceding_tasks')
+        queue_str = f' [队列前 {queue}]' if queue else ''
+        print(f'  [{task_id[:8]}...] {label} status={status:<12s} progress={progress}%{queue_str}')
+        if status == 'SUCCEEDED':
+            return data
+        if status in ('FAILED', 'CANCELED'):
+            sys.exit(f'[ERROR] 任务终止: {status}\n  {data}')
         time.sleep(interval)
-    raise TimeoutError(f"任务 {label} 超时（{timeout}s）")
+    sys.exit('[ERROR] 任务超时，请提高 --timeout 或稍后重试。')
 
 
-def download_glb(model_urls: dict, out: Path) -> Path:
-    url = model_urls.get("glb")
-    if not url:
+def download_glb(model_urls: dict, out_path: Path) -> Path:
+    """下载生成的 GLB 文件。
+    Meshy 响应：model_urls.glb (或 model_urls.glb_xxx 多个格式)
+    """
+    glb_url = model_urls.get('glb')
+    if not glb_url:
         for k, v in model_urls.items():
-            if k.startswith("glb") and isinstance(v, str):
-                url = v
+            if k.startswith('glb') and isinstance(v, str):
+                glb_url = v
                 break
-    if not url:
-        raise ValueError(f"找不到 GLB 链接: {model_urls}")
-    r = requests.get(url, timeout=180, stream=True)
+    if not glb_url:
+        sys.exit(f'[ERROR] 找不到 GLB 下载链接: {list(model_urls.keys())}')
+    print(f'  下载: {glb_url}')
+    r = requests.get(glb_url, timeout=120, stream=True)
     r.raise_for_status()
-    out.write_bytes(r.content)
-    return out
+    out_path.write_bytes(r.content)
+    return out_path
 
 
 # ===================== 核心处理 =====================
 
 def process_one(
     src: Path, out_dir: Path, polycount: int, with_texture: bool,
-    manual_url: str | None = None, use_data_url: bool = False,
+    ai_model: str, manual_url: str | None = None, use_data_url: bool = False,
     max_retry: int = 2,
 ) -> Path:
     """处理一张图片：上传 -> 提交 -> 轮询 -> 下载。带重试。"""
-    label = src.name
+    label = src.name if isinstance(src, Path) else '<url>'
     for attempt in range(1, max_retry + 2):
-      try:
-        if manual_url:
-            img_url = manual_url
-            print(f"\n🔗 [{label}] 使用指定 URL 提交...")
-        elif use_data_url:
-            print(f"\n📦 [{label}] 编码为 data URL...")
-            img_url = upload_image_as_data_url(src)
-        else:
-            print(f"\n📤 [{label}] 上传图片...")
-            img_url = upload_image(src)
-        print(f"🚀 [{label}] 提交生成任务...")
-        task_id = submit_task(img_url, polycount, with_texture)
-        print(f"⏳ [{label}] 等待生成 task={task_id[:8]}...")
-        result = poll_task(task_id, label)
-        glb_path = out_dir / (src.stem + ".glb")
-        download_glb(result["model_urls"], glb_path)
-        triangles = result.get("stats", {}).get("total_triangles", "?")
-        print(f"✅ [{label}] -> {glb_path.name} ({triangles} faces)")
-        return glb_path
-      except Exception as e:
-        if attempt > max_retry:
-            raise
-        print(f"⚠️ [{label}] 第 {attempt} 次失败：{e}\n   重试中...")
-        time.sleep(5)
+        try:
+            if manual_url:
+                img_url = manual_url
+                print(f'\n🔗 [{label}] 使用指定 URL 提交...')
+            elif use_data_url:
+                print(f'\n📦 [{label}] 编码为 data URL...')
+                img_url = upload_image_as_data_url(src)
+            else:
+                print(f'\n📤 [{label}] 上传图片...')
+                img_url = upload_image(src)
+            print(f'🚀 [{label}] 提交生成任务 (model={ai_model}, polycount={polycount})...')
+            task_id = submit_task(img_url, polycount, with_texture, ai_model)
+            print(f'⏳ [{label}] 等待生成 task={task_id[:8]}...')
+            result = poll_task(task_id, label=label)
+            out_name = (src.stem if isinstance(src, Path) else 'output') + '.glb'
+            glb_path = out_dir / out_name
+            download_glb(result.get('model_urls', {}), glb_path)
+            print(f'✅ [{label}] -> {glb_path.name} ({glb_path.stat().st_size // 1024} KB)')
+            return glb_path
+        except Exception as e:
+            if attempt > max_retry:
+                raise
+            print(f'⚠️ [{label}] 第 {attempt} 次失败：{e}\n   重试中...')
+            time.sleep(5)
 
 
 def collect_inputs(p: Path) -> list[Path]:
     if p.is_file():
         return [p]
-    files = sorted([x for x in p.rglob("*") if x.suffix.lower() in ALLOWED_EXT])
+    files = sorted([x for x in p.rglob('*') if x.suffix.lower() in ALLOWED_EXT])
     if not files:
-        sys.exit(f"❌ {p} 下没找到图片（支持 {sorted(ALLOWED_EXT)}）")
+        sys.exit(f'❌ {p} 下没找到图片（支持 {sorted(ALLOWED_EXT)}）')
     return files
 
 
@@ -260,59 +273,72 @@ def collect_inputs(p: Path) -> list[Path]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Meshy.ai 图像转 3D 工具（单张/批量）",
+        description='Meshy.ai 图像转 3D 工具（适配 Meshy 当前 API）',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog='''
 示例:
   python meshify.py sketch.png
   python meshify.py ./sketches/ -o ./models/
   python meshify.py ./sketches/ -o ./models/ --polycount 30000 --workers 2
-        """,
+  python meshify.py --image-url "https://example.com/face.jpg" -o face.glb
+        ''',
     )
-    ap.add_argument("input", help="输入图片或图片目录")
-    ap.add_argument("-o", "--output", default="models", help="输出目录（默认 models）")
-    ap.add_argument("--polycount", type=int, default=DEFAULT_POLYCOUNT,
-                    help="目标三角面数（默认 10000）")
-    ap.add_argument("--texture", action="store_true",
-                    help="生成带 PBR 贴图（默认关闭，素描图不需要）")
-    ap.add_argument("--workers", type=int, default=1,
-                    help="并发任务数（默认 1，推荐 ≤3）")
-    ap.add_argument("--timeout", type=int, default=1800, help="单任务超时秒数")
-    ap.add_argument("--no-balance-check", action="store_true", help="跳过余额检查")
-    ap.add_argument("--image-url", help="手动指定公网 URL，跳过图床上传")
-    ap.add_argument("--data-url", action="store_true",
-                    help="用 base64 data URL 内嵌图片（绕开外网图床，需 Meshy 支持）")
-    ap.add_argument("--yes", "-y", action="store_true", help="跳过确认提示")
+    ap.add_argument('input', nargs='?',
+                    help='输入图片或图片目录（与 --image-url 互斥）')
+    ap.add_argument('-o', '--output', default='models',
+                    help='输出目录（默认 models）')
+    ap.add_argument('--polycount', type=int, default=DEFAULT_POLYCOUNT,
+                    help='目标三角面数（默认 10000）')
+    ap.add_argument('--texture', action='store_true',
+                    help='生成带贴图（默认关闭，素描图不需要）')
+    ap.add_argument('--ai-model', default=DEFAULT_MODEL,
+                    choices=['meshy-4', 'meshy-5', 'meshy-6', 'meshy-7', 'latest', 'meshy-t2'],
+                    help='AI 模型（默认 latest = 选最新可用）')
+    ap.add_argument('--workers', type=int, default=1,
+                    help='并发任务数（默认 1，推荐 ≤3）')
+    ap.add_argument('--timeout', type=int, default=1800, help='单任务超时秒数')
+    ap.add_argument('--no-balance-check', action='store_true', help='跳过余额检查')
+    ap.add_argument('--image-url', help='手动指定公网 URL，跳过图床上传')
+    ap.add_argument('--data-url', action='store_true',
+                    help='用 base64 data URL 内嵌图片')
+    ap.add_argument('--yes', '-y', action='store_true', help='跳过确认提示')
     args = ap.parse_args()
 
+    if not args.image_url and not args.input:
+        ap.error('需要提供 input 图片路径或 --image-url')
+
     if args.image_url:
-        inputs = [Path("<url>")]  # placeholder, not used; --image-url bypasses file input
+        inputs = [Path('<url>')]
     else:
         inputs = collect_inputs(Path(args.input))
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("📋 任务概览")
-    print(f"   输入：{len(inputs)} 张图片")
-    print(f"   输出：{out_dir.resolve()}")
-    print(f"   面数：{args.polycount}")
-    print(f"   并发：{args.workers}")
-    print(f"   贴图：{'是' if args.texture else '否'}")
+    print('📋 任务概览')
+    print(f'   输入：{len(inputs)} 张图片')
+    print(f'   输出：{out_dir.resolve()}')
+    print(f'   面数：{args.polycount}')
+    print(f'   模型：{args.ai_model}')
+    print(f'   贴图：{"是" if args.texture else "否"}')
+    print(f'   并发：{args.workers}')
 
     if not args.no_balance_check:
         bal = verify_credit()
         if bal is not None:
-            print(f"   余额：{bal} credits")
+            print(f'   余额：{bal} credits')
+        else:
+            print('   余额：(接口暂不可用，跳过检查)')
 
     if len(inputs) > 1 and not args.yes:
-        ans = input(f"\n确认批量提交 {len(inputs)} 个任务？(y/N) ").strip().lower()
-        if ans != "y":
-            sys.exit("已取消")
+        ans = input(f'\n确认批量提交 {len(inputs)} 个任务？(y/N) ').strip().lower()
+        if ans != 'y':
+            sys.exit('已取消')
 
     success, failed = 0, []
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {
-            ex.submit(process_one, src, out_dir, args.polycount, args.texture, args.image_url, args.data_url): src
+            ex.submit(process_one, src, out_dir, args.polycount, args.texture,
+                      args.ai_model, args.image_url, args.data_url): src
             for src in inputs
         }
         for fut in cf.as_completed(futs):
@@ -321,14 +347,13 @@ def main() -> None:
                 fut.result()
                 success += 1
             except Exception as e:
-                print(f"❌ {src.name}: {e}")
+                print(f'❌ {src.name}: {e}')
                 failed.append(src.name)
 
-    print(f"\n🎉 完成：{success}/{len(inputs)} 成功")
+    print(f'\n🎉 完成：{success}/{len(inputs)} 成功')
     if failed:
-        print(f"   失败：{failed}")
+        print(f'   失败：{failed}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-
