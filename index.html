@@ -81,6 +81,18 @@
   .picker-card .btn:disabled{background:#d8d4c8;cursor:not-allowed}
   #load-from-disk{width:100%;margin-top:6px;font-size:12px;padding:6px 10px;background:#2a2a2a;color:#e8e5dc;border:1px dashed #5a5a5a}
   #load-from-disk:hover{background:#3a3a3a}
+
+  /* 模型库 */
+  .model-lib-section{background:rgba(200,157,94,.06);padding:12px;border-radius:8px;border:1px solid rgba(200,157,94,.25)}
+  .model-lib-section h2{color:var(--accent,#c89d5e)!important}
+  .model-lib-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+  .model-lib-item{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:6px;padding:8px 10px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;font-size:12px}
+  .model-lib-item:hover{border-color:var(--accent,#c89d5e);background:#3a3a3a}
+  .model-lib-item.current{border-color:var(--accent,#c89d5e);background:rgba(200,157,94,.15)}
+  .model-lib-item .name{flex:1;font-weight:500;color:#e8e5dc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .model-lib-item .meta{font-size:10px;color:#8a8a8a;display:flex;gap:6px;flex-shrink:0}
+  .model-lib-item .check{color:var(--accent,#c89d5e);font-size:12px}
+  .model-lib-item .badge{font-size:9px;padding:1px 6px;border-radius:8px;background:var(--accent,#c89d5e);color:#1a1a1a;font-weight:600}
   #compare-panel{position:absolute;top:0;right:0;bottom:0;width:380px;max-width:50%;background:rgba(255,255,255,.98);backdrop-filter:blur(12px);padding:0;border-left:1px solid rgba(0,0,0,.1);box-shadow:-4px 0 24px rgba(0,0,0,.1);z-index:20;display:none;flex-direction:column}
   #compare-panel.visible{display:flex}
   #compare-panel .panel-header{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.08);display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:500;color:#1a1a1a;flex-shrink:0}
@@ -441,6 +453,16 @@
     </section>
 
     
+    <section class="model-lib-section">
+      <h2>模型库</h2>
+      <div class="label-row" style="margin-top:6px"><span>当前</span><span class="value" id="model-lib-current-name">加载中...</span></div>
+      <div class="model-lib-list" id="model-lib-list"></div>
+      <button id="load-from-disk">📁 加载其他 GLB 文件</button>
+      <div class="btn-group" style="grid-template-columns:1fr;margin-top:6px">
+        <button id="model-lib-clear-cache" title="删除所有本地缓存的模型">🗑 清除模型缓存</button>
+      </div>
+    </section>
+
     <section class="sketch-section">
       <h2>画板</h2>
       <div class="label-row" style="margin-top:6px"><span>模式</span></div>
@@ -2212,6 +2234,78 @@ document.getElementById('um-export').addEventListener('click', () => {
   a.click();
   showToast('已导出 ' + data.user.displayName + ' 的数据', 'success');
 });
+
+
+
+// ============ 模型库 ============
+// 静态清单：列出可用的模型文件（fetch 需要 URL，所以是 URL 列表）
+const MODEL_LIBRARY = [
+  { id: 'default',     url: 'model.glb',                                    name: '默认头部',     tag: '手动',   size: '16 MB',  faces: '~10K' },
+  { id: 'natural-v1',  url: 'models/head-sketch-natural-v1-simplified.glb', name: '素描头像 v1',   tag: 'Meshy',  size: '528 KB', faces: '30K' },
+  { id: 'natural-v2',  url: 'models/head-sketch-natural-v2-simplified.glb', name: '素描头像 v2',   tag: 'Meshy',  size: '528 KB', faces: '30K' },
+  { id: 'natural-v3',  url: 'models/head-sketch-natural-v3-simplified.glb', name: '素描头像 v3',   tag: 'Meshy',  size: '528 KB', faces: '30K' },
+];
+
+function renderModelLibList(currentUrl) {
+  const list = document.getElementById('model-lib-list');
+  if (!list) return;
+  list.innerHTML = '';
+  MODEL_LIBRARY.forEach(m => {
+    const isCurrent = currentUrl === m.url;
+    const item = document.createElement('div');
+    item.className = 'model-lib-item' + (isCurrent ? ' current' : '');
+    item.innerHTML =
+      '<div class="name">' + escapeHtml(m.name) + '</div>' +
+      '<div class="meta"><span>' + escapeHtml(m.size) + '</span><span class="badge">' + escapeHtml(m.tag) + '</span></div>' +
+      (isCurrent ? '<span class="check">✓</span>' : '');
+    if (!isCurrent) {
+      item.addEventListener('click', () => switchModel(m));
+    }
+    list.appendChild(item);
+  });
+}
+
+async function switchModel(model) {
+  showToast('切换到: ' + model.name + '...', '');
+  // 更新 CONFIG 触发 tryFetchModel 重载
+  if (typeof CONFIG !== 'undefined') {
+    CONFIG.modelFile = model.url;
+  }
+  // 触发重新加载
+  if (typeof tryFetchModel === 'function') {
+    const ok = await tryFetchModel();
+    if (ok) {
+      document.getElementById('model-lib-current-name').textContent = model.name;
+      renderModelLibList(model.url);
+      // 缓存到 IDB（如果需要）
+      showToast('已切换到 ' + model.name, 'success');
+    } else {
+      showToast('切换失败：模型加载错误', 'error');
+    }
+  }
+}
+
+document.getElementById('model-lib-clear-cache').addEventListener('click', async () => {
+  if (!confirm('确定要清除所有本地缓存的模型吗？\n（下次加载会重新从网络下载）')) return;
+  if (!userManager.currentUserId) return;
+  try {
+    await modelDB.clearModels(userManager.currentUserId);
+    showToast('已清除模型缓存', 'success');
+  } catch (e) {
+    showToast('清除失败: ' + e.message, 'error');
+  }
+});
+
+// 初始化：把当前 CONFIG.modelFile 标为已选
+
+// 初始化（脚本在 module 末尾，CONFIG 已定义）
+(function initModelLib() {
+  if (typeof CONFIG !== 'undefined' && document.getElementById('model-lib-list')) {
+    document.getElementById('model-lib-current-name').textContent =
+      MODEL_LIBRARY.find(m => m.url === CONFIG.modelFile)?.name || CONFIG.modelFile;
+    renderModelLibList(CONFIG.modelFile);
+  }
+})();
 
 // ============ Toast 工具 ============
 let toastTimer = null;
