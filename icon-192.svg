@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#1a1a1a" rx="32"/>
+  <circle cx="96" cy="96" r="48" fill="none" stroke="#c89d5e" stroke-width="6"/>
+  <circle cx="96" cy="96" r="12" fill="#c89d5e"/>
+  <path d="M 50 140 L 142 140" stroke="#c89d5e" stroke-width="3" opacity="0.5"/>
+  <path d="M 50 52 L 142 52" stroke="#c89d5e" stroke-width="3" opacity="0.5"/>
+  <text x="96" y="172" font-family="sans-serif" font-size="14" fill="#c89d5e" text-anchor="middle" font-weight="bold">素描</text>
+</svg>
