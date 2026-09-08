@@ -30,3 +30,10 @@ build/
 
 # 原始素描图（可选用）
 # natural.png
+
+
+# 调研/截图（不属于项目代码）
+boot-*.png/
+_natural_preview.jpg
+mockup*.html
+
