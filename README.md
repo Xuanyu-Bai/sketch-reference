@@ -4,6 +4,13 @@
 >
 > 完整规划见 `docs/` 目录。
 
+
+## 在线访问
+
+**🎨 在线版本**：https://xuanyu-bai.github.io/sketch-reference/
+
+GitHub Pages 部署，全栈功能（PWA 离线 + IndexedDB + 多用户）。
+
 ## 快速开始
 
 ### Windows（推荐 Node.js）
