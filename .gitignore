@@ -37,3 +37,8 @@ boot-*.png/
 _natural_preview.jpg
 mockup*.html
 
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
