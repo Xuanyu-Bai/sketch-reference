@@ -4,44 +4,32 @@ cd /d "%~dp0"
 
 echo.
 echo ========================================
-echo   ???? 3D ??? - ?????
+echo   素描临摹 3D 参考 - 本地服务器
 echo ========================================
 echo.
 
-REM ?? Python
+where node >nul 2>&1
+if not errorlevel 1 goto :node_ok
+
 where python >nul 2>&1
 if not errorlevel 1 goto :python_ok
 
-where py >nul 2>&1
-if not errorlevel 1 goto :py_ok
-
-where npx >nul 2>&1
-if not errorlevel 1 goto :npx_ok
-
-echo [??] ???? Python ? Node.js
-echo ??? Python ( https://www.python.org/ ) ? Node.js ( https://nodejs.org/ )
-echo.
+echo [ERROR] 需要 Node.js 或 Python 来运行本地服务器
+echo 下载: https://nodejs.org/ 或 https://www.python.org/
 pause
 exit /b 1
 
+:node_ok
+echo [启动] 使用 Node.js serve.js (支持 Service Worker)
+start "" "http://localhost:8000"
+node serve.js
+goto :end
+
 :python_ok
-echo [??] ?? Python http.server
+echo [启动] 使用 Python http.server (注意: Service Worker 需要正确的 MIME 类型)
 start "" "http://localhost:8000"
 python -m http.server 8000
-goto :end
-
-:py_ok
-echo [??] ?? py -m http.server
-start "" "http://localhost:8000"
-py -m http.server 8000
-goto :end
-
-:npx_ok
-echo [??] ?? npx serve
-start "" "http://localhost:3000"
-npx --yes serve -l 3000 .
 
 :end
 echo.
-echo ???????????
 pause >nul
