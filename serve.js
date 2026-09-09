@@ -40,10 +40,14 @@ const server = http.createServer((req, res) => {
     }
     const ext = path.extname(filePath).toLowerCase();
     const mime = MIME_TYPES[ext] || 'application/octet-stream';
+    // dist/ 下的 bundle 文件可长缓存（每次构建内容都变，文件名应带 hash；这里暂用 1 天）
+    const cacheControl = urlPath.startsWith('/dist/')
+      ? 'public, max-age=86400'
+      : 'no-cache';
     res.writeHead(200, {
       'Content-Type': mime,
       'Content-Length': stat.size,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': cacheControl,
       'Service-Worker-Allowed': '/',
     });
     fs.createReadStream(filePath).pipe(res);

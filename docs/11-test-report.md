@@ -149,27 +149,30 @@
 
 | # | 指标 | 目标 | 实测（Playwright 真实）| 实测（Lighthouse 模拟）| 通过 | 备注 |
 |---|---|---|---|---|---|---|
-| P1 | 首屏加载（FCP）| ≤ 1.5s | **716ms** | **3.39s** | ✅ / ⚠️ | Playwright 是真实加载；Lighthouse 模拟 slow-4G/4×CPU |
+| P1 | 首屏加载（FCP）| ≤ 1.5s | **716ms** | **2.64s** | ✅ / ⚠️ | Playwright 是真实加载；Lighthouse 模拟 slow-4G/4×CPU |
 | P2 | 模型切换（首次）| ≤ 3s | **78ms** | — | ✅ | 清空 IDB 后切第二模型，含 GLB 网络 + Three.js 解析 |
 | P3 | 模型切换（缓存命中）| ≤ 0.5s | **37ms** | — | ✅ | 二次切换走 IDB，HUD 立即更新 |
 | P4 | 画板帧率（iPad Air 4）| ≥ 30 FPS | — | — | ⚠️ Skip | 无头环境不渲染真实帧，需真机 Safari |
 | P5 | 撤销 50 步总耗时 | ≤ 1s | **55ms**（1.1ms/步）| — | ✅ | Z 键连按 50 次（含 keydown 事件 + 画布像素恢复）|
-| P6 | 包体（不含模型）| ≤ 5 MB | **0.11 MB**（114 KB）| — | ✅ | 见下方分解；HTML 106 KB 占大头（CDN 引用 + 内联 Three.js 初始化代码）|
+| P6 | 包体（不含模型）| ≤ 5 MB | **0.13 MB**（133 KB）| — | ✅ | 见下方分解；app.min.js 42KB（Three.js 走 CDN 异步）|
 | P7 | Lighthouse PWA | ≥ 90 | — | **100/100** | ✅ | 手算 4 项：manifest+sw.js+HTTPS+viewport |
-| P8 | Lighthouse Performance | ≥ 80 | — | **62/100** | ⚠️ 不达标 | dev 版未压缩；prod 打包（Vite/esbuild）+ Three.js 走 npm 应能 ≥ 80 |
+| P8 | Lighthouse Performance | ≥ 80 | — | **70/100** | ⚠️ 改善 (+13) | esbuild minify + preconnect + modulepreload；TBT 293→145ms ✅；LCP 7.35s 仍是 three.js 150KB gzip 加载瓶颈，需 v1.1 服务端预压缩 + 自定义 three core 子集 |
 
 ### P6 包体分解（HEAD 请求 Content-Length）
 
 | 资源 | 大小 |
 |---|---|
-| `/` （index.html，内联 Three.js 初始化）| 106 KB |
+| `/` （index.html，UI 骨架）| 15 KB |
+| `/dist/app.min.js`（esbuild minify 后的应用代码）| 42 KB |
+| `/dist/app.min.css`（esbuild minify 后的样式）| 18 KB |
 | `/sw.js`（Service Worker）| 3 KB |
 | Google Fonts CSS | 2 KB |
 | `/manifest.webmanifest` | 1 KB |
 | `/icon-192.svg` | 1 KB |
-| **合计** | **≈ 114 KB** |
+| **合计** | **≈ 133 KB** |
 
-> Three.js r160 从 CDN（unpkg）按需加载，不计入包体；模型 .glb 按需从 CDN/本地拉取并写入 IDB，不计入初始包体。
+> Three.js r160（~150KB gzip）从 CDN（unpkg）按需加载，不计入包体；模型 .glb 按需从 CDN/本地拉取并写入 IDB，不计入初始包体。
+> 应用代码经 esbuild minify 后从 68KB 原始 → 42KB minify，CSS 从 20KB → 18KB。
 
 ### P7 PWA 子项明细（手算自 Lighthouse 13，因其已移除 pwa 类目）
 

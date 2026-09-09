@@ -5,10 +5,14 @@
   "main": "serve.js",
   "scripts": {
     "start": "node serve.js",
+    "build": "node scripts/build.mjs",
+    "pretest": "npm run build",
+    "preperf": "npm run build",
+    "preperf:lighthouse": "npm run build",
     "test": "node scripts/e2e-test.mjs",
     "perf": "node scripts/perf-bench.mjs",
     "perf:lighthouse": "node scripts/lighthouse-bench.mjs",
-    "perf:all": "node scripts/perf-bench.mjs && node scripts/lighthouse-bench.mjs"
+    "perf:all": "npm run build && node scripts/perf-bench.mjs && node scripts/lighthouse-bench.mjs"
   },
   "repository": {
     "type": "git",
@@ -18,5 +22,9 @@
   "devDependencies": {
     "lighthouse": "^13.4.1",
     "playwright-core": "^1.63.0"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.160.0"
   }
 }
