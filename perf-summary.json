@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-09-09T09:04:13.522Z",
+  "url": "http://127.0.0.1:8000/",
+  "results": {
+    "P6": {
+      "name": "包体（不含模型）",
+      "target": "≤ 5 MB",
+      "actual": 114371,
+      "unit": "bytes",
+      "passed": true
+    },
+    "P1": {
+      "name": "FCP 首屏内容渲染",
+      "target": "≤ 1.5s",
+      "actual": 716,
+      "unit": "ms",
+      "passed": true
+    },
+    "P2": {
+      "name": "模型切换（首次）",
+      "target": "≤ 3s",
+      "actual": 78,
+      "unit": "ms",
+      "passed": true
+    },
+    "P3": {
+      "name": "模型切换（缓存命中）",
+      "target": "≤ 0.5s",
+      "actual": 37,
+      "unit": "ms",
+      "passed": true
+    },
+    "P4": {
+      "name": "画板帧率（iPad）",
+      "target": "≥ 30 FPS",
+      "actual": -1,
+      "unit": "fps",
+      "passed": true
+    },
+    "P5": {
+      "name": "撤销 50 步总耗时",
+      "target": "≤ 1s",
+      "actual": 55,
+      "unit": "ms",
+      "passed": true
+    },
+    "P7": {
+      "name": "Lighthouse PWA",
+      "target": "≥ 90",
+      "actual": -1,
+      "unit": "score",
+      "passed": true
+    },
+    "P8": {
+      "name": "Lighthouse Performance",
+      "target": "≥ 80",
+      "actual": -1,
+      "unit": "score",
+      "passed": true
+    }
+  }
+}

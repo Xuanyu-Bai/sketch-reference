@@ -5,7 +5,8 @@
   "main": "serve.js",
   "scripts": {
     "start": "node serve.js",
-    "test": "node scripts/e2e-test.mjs"
+    "test": "node scripts/e2e-test.mjs",
+    "perf": "node scripts/perf-bench.mjs"
   },
   "repository": {
     "type": "git",
