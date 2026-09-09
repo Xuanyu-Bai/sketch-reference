@@ -67,6 +67,16 @@ ngrok http 8000
 | 移动端打开 | 用手机扫码访问 |
 | iPad 画板 | 用 iPad Safari 测试压感 |
 
+## CI / CD
+
+**自动测试**：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — 每次 push / PR 自动跑：
+- `npm test`（Playwright E2E 50 用例）
+- `npm run perf`（Playwright 性能基准 P1-P3/P5/P6）
+- `npm run perf:lighthouse`（Lighthouse P7/P8，软失败）
+- 上传 `perf-summary.json` 到 artifact（30 天保留）
+
+**自动部署**：当前主部署走 GitHub Pages（push 到 main 自动）。Cloudflare Pages workflow（`.github/workflows/deploy.yml`）默认手动触发，可选启用。
+
 ## PWA 安装提示
 
 用户访问 https://sketch-reference.pages.dev 后：

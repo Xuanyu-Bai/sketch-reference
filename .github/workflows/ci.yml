@@ -1,0 +1,115 @@
+# GitHub Actions CI: 每次 push / PR 自动跑 E2E 测试 + 性能基准
+#
+# 设计：
+# - 单 job 串跑 e2e + perf（避免 Edge/Chrome 进程冲突）
+# - Lighthouse 跑软失败（exit≠0 不阻塞），因为容器环境可能缺 Edge
+# - 30 分钟超时（CI 机器比本地慢 3-5x）
+# - 上传 perf-summary.json 作为 artifact（30 天保留），便于趋势对比
+#
+# 触发条件：
+# - push 到 main / master
+# - pull_request 到 main / master
+# - 手动触发（workflow_dispatch）
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-perf:
+    name: E2E + 性能基准
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 启动本地服务器
+        run: |
+          node serve.js &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID"
+          # 等服务器起来
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/ > /dev/null; then
+              echo "✅ 服务器已就绪"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -sf http://127.0.0.1:8000/ > /dev/null; then
+            echo "❌ 服务器启动失败"
+            exit 1
+          fi
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
+      - name: 安装 Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: 跑 E2E 测试 (Playwright)
+        run: npm test 2>&1 | tee e2e-output.txt
+
+      - name: 跑性能基准（Playwright 真实）
+        run: npm run perf 2>&1 | tee perf-output.txt
+
+      - name: 跑 Lighthouse (软失败)
+        id: lighthouse
+        continue-on-error: true
+        run: npm run perf:lighthouse 2>&1 | tee lighthouse-output.txt || echo "⚠️ Lighthouse 在 CI 环境可能因 Edge 未安装而失败"
+
+      - name: 打印性能摘要
+        if: always()
+        run: |
+          echo "================ E2E ================"
+          tail -20 e2e-output.txt
+          echo "================ PERF ================"
+          tail -20 perf-output.txt
+          echo "================ LIGHTHOUSE ================"
+          tail -20 lighthouse-output.txt
+
+      - name: 上传 perf-summary.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-summary
+          path: |
+            perf-summary.json
+            lighthouse-summary.json
+            lighthouse-report.json
+          retention-days: 30
+
+      - name: 上传测试日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            e2e-output.txt
+            perf-output.txt
+            lighthouse-output.txt
+          retention-days: 7
+
+      - name: 关闭服务器
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then kill $SERVER_PID 2>/dev/null || true; fi
+          true

@@ -4,6 +4,11 @@
 >
 > 完整规划见 `docs/` 目录。
 
+[![CI](https://github.com/Xuanyu-Bai/sketch-reference/actions/workflows/ci.yml/badge.svg)](https://github.com/Xuanyu-Bai/sketch-reference/actions/workflows/ci.yml)
+[![Deploy](https://github.com/Xuanyu-Bai/sketch-reference/actions/workflows/deploy.yml/badge.svg)](https://github.com/Xuanyu-Bai/sketch-reference/actions/workflows/deploy.yml)
+[![PWA Score](https://img.shields.io/badge/PWA-100%2F100-success)](docs/11-test-report.md#3-性能基准)
+[![Performance](https://img.shields.io/badge/Lighthouse_Perf-70%2F100-yellow)](docs/11-test-report.md#3-性能基准)
+
 
 ## 在线访问
 
@@ -46,8 +51,14 @@ npx serve .
 ## 文件结构
 
 ```
-├── index.html              主应用（1998 行：3D + 画板 + 用户系统 + 对比 + PWA）
-├── serve.js                Node HTTP 服务器（正确 MIME 类型）
+├── index.html              主应用 HTML（280 行：UI 骨架 + importmap + bundle 引用）
+├── src/
+│   ├── app.js              应用代码（1917 行，esbuild minify → 42KB）
+│   └── app.css             样式（254 行，esbuild minify → 18KB）
+├── dist/                   构建产物（自动生成，git 跟踪）
+│   ├── app.min.js          应用代码 minify
+│   └── app.min.css         样式 minify
+├── serve.js                Node HTTP 服务器（正确 MIME + 缓存策略）
 ├── manifest.webmanifest    PWA 配置
 ├── sw.js                   Service Worker（缓存策略：cache-first shell / network-first GLB）
 ├── icon-192.svg / icon-512.svg  PWA 图标
@@ -55,8 +66,15 @@ npx serve .
 ├── natural.png             参考图（用于对比模式，可选）
 ├── start.bat / start.ps1   一键启动脚本
 ├── scripts/
+│   ├── build.mjs           esbuild 构建脚本
+│   ├── e2e-test.mjs        Playwright E2E 套件（45 用例）
+│   ├── perf-bench.mjs      Playwright 性能基准
+│   ├── lighthouse-bench.mjs Lighthouse 性能基准
 │   ├── meshify.py          Meshy.ai 2D→3D 批量工具（生产级）
 │   └── image_to_3d.py      Meshy.ai 单图脚本
+├── .github/workflows/
+│   ├── ci.yml              CI：每次 push 跑 npm test + perf
+│   └── deploy.yml          Cloudflare Pages 手动部署
 ├── docs/                   产品规划文档
 │   ├── 01-requirements-analysis.md   需求分析
 │   ├── 02-feasibility-analysis.md    技术可行性
@@ -68,8 +86,26 @@ npx serve .
 │   ├── 08-ui-design.md               UI 设计规范
 │   ├── 09-data-strategy.md           数据与多用户策略
 │   ├── 10-dev-progress.md            开发进度记录
-│   └── README.md                     文档索引
+│   └── 11-test-report.md             测试报告 + 性能基准
 └── README.md               本文件
+```
+
+## 开发流程
+
+```bash
+# 1. 安装依赖
+npm install
+
+# 2. 跑 E2E 测试（自动先 build）
+npm test
+
+# 3. 跑性能基准（自动先 build）
+npm run perf         # Playwright 真实加载
+npm run perf:lighthouse  # Lighthouse 模拟中端机
+npm run perf:all     # 两者都跑
+
+# 4. 修改 src/ 后需要重新 build
+npm run build
 ```
 
 ## 主要功能
