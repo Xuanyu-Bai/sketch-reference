@@ -69,7 +69,7 @@ const canvasBox = async (sel) => {
   return b;
 };
 
-async function drawLine(sel, x1, y1, x2, y2) {
+async function drawLine(x1, y1, x2, y2) {
   await page.mouse.move(x1, y1);
   await page.mouse.down();
   for (let i = 1; i <= 8; i++) {
@@ -172,7 +172,28 @@ skip(4, '视觉中心算法：脸在画面中央', '需人工目视，无法在�
     const after = await hud();
     if (before.az !== after.az || before.el !== after.el) okCount++;
   }
-  (okCount >= 2 ? ok : fail)(10, '快捷键 F/S/T', `${okCount}/3 个快捷键触发视角切换`);
+  // R 键视角回正（回归 BUG-1：keydown 映射之前找 [data-view="reset"] 查不到）
+  // 切到 side，然后分别用 R 键和手动点击 #reset-view，比较两次结果是否一致
+  await page.click('button[data-view="side"]');
+  await sleep(500);
+  await page.keyboard.press('r');
+  await sleep(900); // setBaseView 动画 600ms
+  const afterKeyR = await hud();
+  // 再切到 side，再用按钮回正
+  await page.click('button[data-view="side"]');
+  await sleep(500);
+  await page.click('#reset-view');
+  await sleep(900);
+  const afterClick = await hud();
+  // HUD 文本带 "°" 单位，必须 parseFloat，否则 "32°"-"32°" = NaN
+  const az1 = parseFloat(afterKeyR.az), el1 = parseFloat(afterKeyR.el), d1 = parseFloat(afterKeyR.dist);
+  const az2 = parseFloat(afterClick.az), el2 = parseFloat(afterClick.el), d2 = parseFloat(afterClick.dist);
+  const rMatchesClick =
+    Math.abs(az1 - az2) < 2 &&
+    Math.abs(el1 - el2) < 2 &&
+    Math.abs(d1 - d2) < 0.1;
+  if (rMatchesClick) okCount++;
+  (okCount >= 3 ? ok : fail)(10, '快捷键 F/S/T/R', `${okCount}/4 个快捷键触发视角切换/回正`);
 }
 
 skip(11, '单指触屏拖动 = 旋转视角', '与鼠标共用 Pointer 事件路径（已由 #6 覆盖）；真实触屏手感需真机');
@@ -206,7 +227,7 @@ skip(12, '双指捏合 = 缩放', '多指手势无法在无头环境模拟，需
   await page.click('#mode-sketch');
   await sleep(300);
   const box = await canvasBox('#sketch-canvas');
-  if (box) await drawLine('#sketch-canvas', box.x + box.width * 0.3, box.y + box.height * 0.5, box.x + box.width * 0.7, box.y + box.height * 0.5);
+  if (box) await drawLine(box.x + box.width * 0.3, box.y + box.height * 0.5, box.x + box.width * 0.7, box.y + box.height * 0.5);
   await sleep(200);
   const ink = await hasInk();
   (ink ? ok : fail)(18, '画板：拖动画出线条', ink ? '画布检测到非透明像素' : '画布仍空白');
@@ -261,7 +282,7 @@ skip(20, 'S Pen 压感', '同 #19，需真机');
   await page.click('#mode-sketch');
   await sleep(200);
   const box = await canvasBox('#sketch-canvas');
-  if (box) await drawLine('#sketch-canvas', box.x + box.width * 0.3, box.y + box.height * 0.4, box.x + box.width * 0.7, box.y + box.height * 0.4);
+  if (box) await drawLine(box.x + box.width * 0.3, box.y + box.height * 0.4, box.x + box.width * 0.7, box.y + box.height * 0.4);
   await sleep(200);
   const inkBefore = await hasInk();
   await page.keyboard.press('b'); // 退出绘画模式

@@ -2051,15 +2051,22 @@ document.getElementById('screenshot').addEventListener('click', () => {
 
 // ============ 键盘快捷键 ============
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
-  const map = { f:'front', s:'side', t:'top', r:'reset' };
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // 不抢 Ctrl+R / Cmd+R 等系统组合键
   const k = e.key.toLowerCase();
-  if (map[k]) {
-    const btn = document.querySelector('[data-view="' + map[k] + '"]');
+  if (k === 'f' || k === 's' || k === 't') {
+    const name = k === 'f' ? 'front' : k === 's' ? 'side' : 'top';
+    const btn = document.querySelector('[data-view="' + name + '"]');
     if (btn) btn.click();
+  } else if (k === 'r') {
+    // 视角回正（独立按钮 #reset-view，无 data-view 属性）
+    document.getElementById('reset-view').click();
+  } else if (k === 'w') {
+    document.getElementById('show-wireframe').click();
+  } else if (k === 'g') {
+    document.getElementById('show-grid').click();
   }
-  if (k === 'w') document.getElementById('show-wireframe').click();
-  if (k === 'g') document.getElementById('show-grid').click();
 });
 
 // 工具栏折叠/展开

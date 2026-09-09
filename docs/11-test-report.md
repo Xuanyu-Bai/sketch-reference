@@ -72,7 +72,7 @@
 | 7 |  鼠标移出画布 → 1s 内回正  | ✅ Pass / ☐ Fail | 移出画布触发回正动画 |
 | 8 |  滚轮缩放（0.3 ~ 60 单位） | ✅ Pass / ☐ Fail | dist 随滚轮变化 |
 | 9 |  6 个预设视角按钮切换正确  | ✅ Pass / ☐ Fail | 6/6 视角 HUD 变化 |
-| 10 |  快捷键 F/S/T/R 工作  | ✅ Pass / ☐ Fail | F/S/T 生效（R 键映射无效，见 §6） |
+| 10 |  快捷键 F/S/T/R 工作  | ✅ Pass / ☐ Fail | F/S/T/R 全部生效（4/4），R 键已修复 BUG-1 |
 | 11 |  单指触屏拖动 = 旋转视角  | ☐ Pass / ⚠️ Skip | 与鼠标共用指针路径(#6已覆盖)，真实触屏手感需真机 |
 | 12 |  双指捏合 = 缩放  | ☐ Pass / ⚠️ Skip | 多指手势无法无头模拟，需真机 |
 ### 2.3 光源控制
@@ -195,7 +195,16 @@
 
 | ID | 严重度 | 描述 | 复现步骤 | 状态 | 修复版本 |
 |---|---|---|---|---|---|
-| BUG-1 | P3 | 快捷键 R（视角回正）无效：keydown 映射 `r:'reset'` 查找 `[data-view="reset"]`，但回正按钮实际是 `#reset-view`（无 `data-view` 属性），查不到元素 | 按 R 键，视角不回正 | Open | v1.1 |
+| BUG-1 | P3 | 快捷键 R（视角回正）无效：keydown 映射 `r:'reset'` 查找 `[data-view="reset"]`，但回正按钮实际是 `#reset-view`（无 `data-view` 属性），查不到元素 | 按 R 键，视角不回正 | ✅ Fixed (2026-09-09) | v1.0.1 |
+
+### BUG-1 修复记录
+
+- **改动**：`index.html` 键盘事件处理函数（行 2052-2070）
+  - 旧代码用统一的 `[data-view="..."]` 查询表，对 R 键查找不存在的 `[data-view="reset"]`
+  - 新代码：`k === 'r'` 时直接调用 `document.getElementById('reset-view').click()`，与按钮 click 走同一条路径
+  - 顺手加强：忽略 TEXTAREA / contenteditable 输入框；忽略 Ctrl/Meta/Alt 组合键（不抢 Cmd+R 刷新）
+- **回归测试**：`scripts/e2e-test.mjs` 用例 #10 改为 4/4 验证（F/S/T/R），R 键结果必须与手动点击 `#reset-view` 在 ±2° 内一致
+- **测试结果**：HEADLESS Chromium PASS 4/4，零 JS 错误
 
 ---
 
