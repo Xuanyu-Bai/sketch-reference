@@ -1,12 +1,20 @@
-# 自动部署到 Cloudflare Pages
-# 触发：push 到 main 分支
+# Cloudflare Pages 部署（可选，默认手动触发）
+#
+# 当前主部署是 GitHub Pages（push 到 main 自动生效）：
+#   https://xuanyu-bai.github.io/sketch-reference/
+#
+# 本工作流默认不随 push 自动运行，避免因缺少 Cloudflare Secret 而报错。
+# 如需启用 Cloudflare Pages：
+#   1) 在 GitHub 仓库添加 Secret：CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID
+#   2) 在 Actions 页手动 Run workflow
+# 想恢复「push 自动部署」，取消下面 push 段的注释即可。
 
 name: Deploy to Cloudflare Pages
 
 on:
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:    # 允许手动触发
 
 jobs:

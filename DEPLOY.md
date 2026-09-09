@@ -107,8 +107,8 @@ ngrok http 8000
 | 项目 | 值 |
 |---|---|
 | 仓库 | https://github.com/Xuanyu-Bai/sketch-reference |
-| Pages URL | **https://xuanyu-bai.github.io/sketch-reference/** ✅ |
+| Pages URL | **https://xuanyu-bai.github.io/sketch-reference/** ✅（当前主部署） |
 | 自定义域名 | 无 |
-| HTTPS | ✅（Cloudflare 自动）|
+| HTTPS | ✅（GitHub Pages 自动）|
 | PWA | ✅ |
 | 总包大小 | ~5 MB（不含 .glb 模型）|
