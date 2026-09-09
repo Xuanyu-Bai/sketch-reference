@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node serve.js",
     "test": "node scripts/e2e-test.mjs",
-    "perf": "node scripts/perf-bench.mjs"
+    "perf": "node scripts/perf-bench.mjs",
+    "perf:lighthouse": "node scripts/lighthouse-bench.mjs",
+    "perf:all": "node scripts/perf-bench.mjs && node scripts/lighthouse-bench.mjs"
   },
   "repository": {
     "type": "git",
@@ -14,6 +16,7 @@
   },
   "license": "ISC",
   "devDependencies": {
+    "lighthouse": "^13.4.1",
     "playwright-core": "^1.63.0"
   }
 }
