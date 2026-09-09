@@ -1,11 +1,29 @@
 # 测试报告 · 美术艺考生临摹 App v1.0
 
 > 版本：v1.0 测试报告
-> 日期：2026-09-08（待填）
-> 状态：**待填 / 待测试**
+> 日期：2026-09-09（无头浏览器自动化冒烟）
+> 状态：**进行中** — 已完成自动化冒烟测试（本地服务 + 无头 Chromium），真机/交互手测待执行
 
 本报告记录 v1.0 MVP 的完整测试执行情况。
 模板参照 [`06-verification-plan.md`](./06-verification-plan.md) 中的 50 项手测用例 + 7 台设备 + 8 项性能基准 + 10 人 UAT。
+
+---
+
+## 0. 自动化冒烟测试摘要（2026-09-09）
+
+无头 Chromium（Edge + SwiftShader WebGL）加载 `http://127.0.0.1:8000/`，通过 DOM 结构验证：
+
+| 检查项 | 结果 | 证据 |
+|---|---|---|
+| 本地服务器 + 正确 MIME | ✅ | index / sw.js / manifest / glb 均 200 且 Content-Type 正确 |
+| Three.js r160 从 CDN 加载 | ✅ | `canvas data-engine="three.js r160"` |
+| WebGL 渲染器初始化 | ✅ | 同上，canvas 已创建 |
+| 默认模型加载 | ✅ | 当前模型名「加载中…」→「默认头部」 |
+| 模型库渲染 | ✅ | 4 个 `.model-lib-item` |
+| 画板 / 对比画布创建 | ✅ | `#sketch-canvas`、`#compare-sketch-canvas` |
+| 欢迎 Toast | ✅ | `.toast.show.success` |
+
+> 注：交互类用例（视角拖动、压感、撤销、多用户切换、SW 离线）无法在无头环境验证，需真机/手动执行。
 
 ---
 
@@ -15,13 +33,13 @@
 
 | 项目 | 值 |
 |---|---|
-| App 版本 | v1.0.0（commit hash 待填） |
-| 部署 URL | 待填（如 https://sketch-ref.pages.dev） |
-| 测试日期 | YYYY-MM-DD |
-| 测试人员 | 待填 |
-| 浏览器（桌面） | Chrome ___ / Safari ___ / Firefox ___ / Edge ___ |
-| 设备（移动） | iPad Air ___ / iPad mini ___ / 小米平板 ___ / 三星 Tab ___ |
-| 网络 | Wi-Fi / 4G / 离线（飞行模式）|
+| App 版本 | v1.0.0（commit 353aead） |
+| 部署 URL | 本地 http://127.0.0.1:8000 / GitHub Pages https://xuanyu-bai.github.io/sketch-reference/ |
+| 测试日期 | 2026-09-09 |
+| 测试人员 | Claude（无头浏览器自动化冒烟） |
+| 浏览器（桌面） | Edge 无头（Chromium + SwiftShader WebGL） |
+| 设备（移动） | 待真机测试（iPad/安卓平板） |
+| 网络 | 本地 + 公网 GitHub Pages |
 
 ### 1.2 服务端配置
 
@@ -41,7 +59,7 @@
 
 | # | 用例 | 结果 | 备注 |
 |---|---|---|---|
-| 1 | 加载默认模型 model.glb | ☐ Pass / ☐ Fail | |
+| 1 | 加载默认模型 model.glb | ✅ Pass / ☐ Fail | model.glb 返回 200 + MIME `model/gltf-binary`；DOM 当前模型名由「加载中…」→「默认头部」 |
 | 2 | HUD（方位/仰角/距离）显示正确 | ☐ Pass / ☐ Fail | |
 | 3 | 网格底盘可见 + 4×4 + 20×20 | ☐ Pass / ☐ Fail | |
 | 4 | 视觉中心算法：脸在画面中央 | ☐ Pass / ☐ Fail | |
@@ -103,7 +121,7 @@
 
 | # | 用例 | 结果 | 备注 |
 |---|---|---|---|
-| 38 | 模型库侧栏列出 4 个模型 | ☐ Pass / ☐ Fail | |
+| 38 | 模型库侧栏列出 4 个模型 | ✅ Pass / ☐ Fail | DOM 检测到 4 个 `.model-lib-item` 元素 |
 | 39 | 点击切换模型 + 自动加载 + 高亮 | ☐ Pass / ☐ Fail | |
 | 40 | 加载后自动写入 IndexedDB | ☐ Pass / ☐ Fail | |
 | 41 | 刷新后从 IDB 命中（秒开）| ☐ Pass / ☐ Fail | |
