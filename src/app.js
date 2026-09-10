@@ -1235,6 +1235,7 @@ class TimerStore {
     this.sessionStartedAt = null;
     this.finishedAt = null;
     this.lastTickAt = Date.now();
+    this.accumulatedMs = 0; // free 模式：累计已计时时长（不靠 remainingMs）
     this.listeners = { tick: [], state: [], finish: [] };
     this._persistHandle = null;
     this._rafId = null;
@@ -1274,15 +1275,22 @@ class TimerStore {
       this.finishedAt = s.finishedAt || null;
       this.lastTickAt = s.lastTickAt || Date.now();
       if (s.customDurationMs) this._customDurationMs = s.customDurationMs;
+      this.accumulatedMs = s.accumulatedMs || 0;
+      if (this.mode === 'free') this.remainingMs = this.accumulatedMs;
 
       // 补偿刷新漂移
       if (this.state === 'running') {
         const now = Date.now();
         const elapsed = now - this.lastTickAt;
         if (elapsed > 0) {
-          this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+          if (this.mode === 'free') {
+            this.accumulatedMs += elapsed;
+            this.remainingMs = this.accumulatedMs;
+          } else {
+            this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+          }
           this.lastTickAt = now;
-          if (this.remainingMs <= 0) {
+          if (this.mode !== 'free' && this.remainingMs <= 0) {
             this.state = 'finished';
             this.finishedAt = now;
             // 异步触发 finish（historyStore 可能尚未实例化）
@@ -1304,6 +1312,7 @@ class TimerStore {
       schemaVersion: 1,
       mode: this.mode,
       customDurationMs: this._customDurationMs,
+      accumulatedMs: this.accumulatedMs,
       state: this.state,
       durationMs: this.durationMs,
       remainingMs: this.remainingMs,
@@ -1326,6 +1335,7 @@ class TimerStore {
     this.cycle = 1;
     this.durationMs = this._durationForMode(this.mode, this.cycle);
     this.remainingMs = (this.mode === 'free' || this.mode === 'custom') ? this.durationMs : this.durationMs;
+    this.accumulatedMs = 0;
     this.state = 'idle';
     this.sessionStartedAt = null;
     this.finishedAt = null;
@@ -1373,9 +1383,10 @@ class TimerStore {
       }
     }
     if (this.mode === 'free' && this.state === 'idle') {
-      // 自由计时：从 0 开始累计
+      // 自由计时：从 0 开始累计，display 看 accumulatedMs
       this.durationMs = 0;
       this.remainingMs = 0;
+      this.accumulatedMs = 0;
     }
     if (this.mode === 'custom' && this.state === 'idle') {
       // 自定义计时：从 durationMs 倒计时
@@ -1414,7 +1425,13 @@ class TimerStore {
   // 返回一段"已完成 session"的快照（计时器/历史用）
   snapshotSession(mode = 'manual') {
     const user = this.userManager.getCurrent();
-    const elapsed = this.sessionStartedAt ? Date.now() - this.sessionStartedAt : 0;
+    // 优先用 accumulatedMs（free 模式累计值），其次用 sessionStartedAt 反算
+    let elapsed = 0;
+    if (this.mode === 'free' && this.accumulatedMs) {
+      elapsed = this.accumulatedMs;
+    } else if (this.sessionStartedAt) {
+      elapsed = Date.now() - this.sessionStartedAt;
+    }
     return {
       id: 'hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       createdAt: Date.now(),
@@ -1449,13 +1466,20 @@ class TimerStore {
     if (this.state === 'running') {
       const elapsed = now - this.lastTickAt;
       if (elapsed > 0) {
-        this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+        // free 模式：累加 elapsed 到 accumulatedMs（不靠 remainingMs，永远不会到 0）
+        // 其他模式：remainingMs 倒计时
+        if (this.mode === 'free') {
+          this.accumulatedMs += elapsed;
+          this.remainingMs = this.accumulatedMs;
+        } else {
+          this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+        }
         this.lastTickAt = now;
         if (now - this._lastPersist > 5000) {
           this.save();
           this._lastPersist = now;
         }
-        if (this.remainingMs <= 0) {
+        if (this.mode !== 'free' && this.remainingMs <= 0) {
           this.state = 'finished';
           this.finishedAt = now;
           this.save();
