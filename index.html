@@ -108,10 +108,18 @@
     <span id="tw-display">25:00</span>
   </div>
   <div class="tw-body">
-    <div class="tw-modes btn-group" style="grid-template-columns:repeat(3,1fr)">
+    <div class="tw-modes btn-group" style="grid-template-columns:repeat(4,1fr)">
       <button data-tw-mode="pomodoro" class="active">番茄钟</button>
       <button data-tw-mode="free">自由</button>
+      <button data-tw-mode="custom">自定义</button>
       <button data-tw-mode="exam">考试 3h</button>
+    </div>
+    <div class="tw-custom" id="tw-custom-panel" hidden style="display:flex;gap:6px;align-items:center;margin-top:6px;justify-content:center">
+      <input type="number" id="tw-custom-hours" min="0" max="8" value="0" step="1" inputmode="numeric" aria-label="小时" style="width:48px;text-align:center;padding:4px;background:#0d0d0d;color:#e8e5dc;border:1px solid #3a3a3a;border-radius:6px;font-size:13px">
+      <span style="color:#7a7a7a;font-size:11px">时</span>
+      <input type="number" id="tw-custom-mins" min="0" max="59" value="45" step="5" inputmode="numeric" aria-label="分钟" style="width:48px;text-align:center;padding:4px;background:#0d0d0d;color:#e8e5dc;border:1px solid #3a3a3a;border-radius:6px;font-size:13px">
+      <span style="color:#7a7a7a;font-size:11px">分</span>
+      <button id="tw-custom-apply" style="font-size:11px;padding:5px 10px">应用</button>
     </div>
     <div class="tw-controls btn-group" style="grid-template-columns:1fr 1fr;margin-top:6px">
       <button id="tw-play">▶ 开始</button>

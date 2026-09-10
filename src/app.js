@@ -1221,11 +1221,13 @@ const annotationLayer = new AnnotationLayer(annotationCanvasEl, canvasContainer)
 const POMODORO_WORK_MS = 25 * 60 * 1000;
 const POMODORO_BREAK_MS = 5 * 60 * 1000;
 const EXAM_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_CUSTOM_MS = 45 * 60 * 1000; // 自定义时长默认值 45 分钟
 
 class TimerStore {
   constructor(userManager) {
     this.userManager = userManager;
     this.mode = 'pomodoro';
+    this._customDurationMs = DEFAULT_CUSTOM_MS;
     this.state = 'idle'; // idle | running | paused | finished
     this.durationMs = POMODORO_WORK_MS;
     this.remainingMs = POMODORO_WORK_MS;
@@ -1271,6 +1273,7 @@ class TimerStore {
       this.sessionStartedAt = s.sessionStartedAt || null;
       this.finishedAt = s.finishedAt || null;
       this.lastTickAt = s.lastTickAt || Date.now();
+      if (s.customDurationMs) this._customDurationMs = s.customDurationMs;
 
       // 补偿刷新漂移
       if (this.state === 'running') {
@@ -1300,6 +1303,7 @@ class TimerStore {
     const payload = {
       schemaVersion: 1,
       mode: this.mode,
+      customDurationMs: this._customDurationMs,
       state: this.state,
       durationMs: this.durationMs,
       remainingMs: this.remainingMs,
@@ -1314,13 +1318,14 @@ class TimerStore {
   _durationForMode(mode, cycle) {
     if (mode === 'pomodoro') return cycle % 2 === 1 ? POMODORO_WORK_MS : POMODORO_BREAK_MS;
     if (mode === 'exam') return EXAM_MS;
+    if (mode === 'custom') return this._customDurationMs || DEFAULT_CUSTOM_MS;
     return 0; // free 模式无固定时长
   }
 
   _resetForMode(silent = false) {
     this.cycle = 1;
     this.durationMs = this._durationForMode(this.mode, this.cycle);
-    this.remainingMs = this.mode === 'free' ? 0 : this.durationMs;
+    this.remainingMs = (this.mode === 'free' || this.mode === 'custom') ? this.durationMs : this.durationMs;
     this.state = 'idle';
     this.sessionStartedAt = null;
     this.finishedAt = null;
@@ -1331,12 +1336,25 @@ class TimerStore {
   }
 
   setMode(mode) {
-    if (!['pomodoro', 'free', 'exam'].includes(mode)) return;
+    if (!['pomodoro', 'free', 'exam', 'custom'].includes(mode)) return;
     if (this.state === 'running') {
       if (!confirm('计时进行中，切换模式将重置当前计时，确定？')) return;
     }
     this.mode = mode;
     this._resetForMode();
+  }
+
+  // 自定义时长：UI 调用，分钟数 → ms。最小 1 分钟，最大 8 小时
+  setCustomDuration(minutes) {
+    const mins = Math.max(1, Math.min(8 * 60, Math.round(Number(minutes) || 0)));
+    this._customDurationMs = mins * 60 * 1000;
+    if (this.mode === 'custom' && this.state !== 'running') {
+      this.durationMs = this._customDurationMs;
+      this.remainingMs = this._customDurationMs;
+      this.save();
+      this._emit('state', this.getState());
+      this._renderUI();
+    }
   }
 
   start() {
@@ -1347,6 +1365,9 @@ class TimerStore {
         this.cycle += 1;
         this.durationMs = this._durationForMode(this.mode, this.cycle);
         this.remainingMs = this.durationMs;
+      } else if (this.mode === 'custom') {
+        this.durationMs = this._durationForMode(this.mode, this.cycle);
+        this.remainingMs = this.durationMs;
       } else {
         this.remainingMs = this.mode === 'free' ? 0 : this.durationMs;
       }
@@ -1355,6 +1376,11 @@ class TimerStore {
       // 自由计时：从 0 开始累计
       this.durationMs = 0;
       this.remainingMs = 0;
+    }
+    if (this.mode === 'custom' && this.state === 'idle') {
+      // 自定义计时：从 durationMs 倒计时
+      this.durationMs = this._durationForMode(this.mode, this.cycle);
+      this.remainingMs = this.durationMs;
     }
     this.state = 'running';
     if (this.sessionStartedAt == null) this.sessionStartedAt = Date.now();
@@ -1466,12 +1492,24 @@ class TimerStore {
     this._renderDisplay();
     const labelEl = document.getElementById('tw-mode-label');
     if (labelEl) {
-      const labels = { pomodoro: '番茄钟', free: '自由计时', exam: '考试模拟' };
+      const labels = { pomodoro: '番茄钟', free: '自由计时', exam: '考试模拟', custom: '自定义计时' };
       labelEl.textContent = labels[this.mode] || this.mode;
     }
     document.querySelectorAll('[data-tw-mode]').forEach(b => {
       b.classList.toggle('active', b.dataset.twMode === this.mode);
     });
+    // 自定义时长面板：仅在 custom 模式时显示，并把当前值同步到 input
+    const customPanel = document.getElementById('tw-custom-panel');
+    if (customPanel) {
+      customPanel.hidden = this.mode !== 'custom';
+      if (this.mode === 'custom') {
+        const mins = Math.round((this._customDurationMs || DEFAULT_CUSTOM_MS) / 60000);
+        const hEl = document.getElementById('tw-custom-hours');
+        const mEl = document.getElementById('tw-custom-mins');
+        if (hEl && document.activeElement !== hEl) hEl.value = Math.floor(mins / 60);
+        if (mEl && document.activeElement !== mEl) mEl.value = mins % 60;
+      }
+    }
     const widget = document.getElementById('timer-widget');
     if (widget) {
       widget.classList.toggle('running', this.state === 'running');
@@ -1594,7 +1632,7 @@ class ExportService {
       const d = new Date();
       const ts = d.toISOString().replace(/T/, ' ').slice(0, 19);
       const timer = this.timerStore ? this.timerStore.getState() : null;
-      const modeLabel = timer ? ({ pomodoro: '番茄钟', free: '自由', exam: '考试' }[timer.mode] || timer.mode) : '';
+      const modeLabel = timer ? ({ pomodoro: '番茄钟', free: '自由', exam: '考试', custom: '自定义' }[timer.mode] || timer.mode) : '';
       return ts + (modeLabel ? ' · ' + modeLabel : '');
     })();
     doc.setFontSize(10);
@@ -1834,7 +1872,7 @@ function fmtRelativeTime(ts) {
   return (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 function modeLabel(mode) {
-  return ({ pomodoro: '番茄钟', free: '自由', exam: '考试', manual: '手动' }[mode] || mode);
+  return ({ pomodoro: '番茄钟', free: '自由', exam: '考试', custom: '自定义', manual: '手动' }[mode] || mode);
 }
 
 function renderHistoryGrid() {
@@ -2934,6 +2972,22 @@ document.getElementById('tw-toggle').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-tw-mode]').forEach(btn => {
   btn.addEventListener('click', () => timerStore.setMode(btn.dataset.twMode));
+});
+// 自定义时长"应用"按钮：把"时+分"换算成分钟 → setCustomDuration
+document.getElementById('tw-custom-apply').addEventListener('click', () => {
+  const h = Math.max(0, parseInt(document.getElementById('tw-custom-hours').value, 10) || 0);
+  const m = Math.max(0, parseInt(document.getElementById('tw-custom-mins').value, 10) || 0);
+  const total = h * 60 + m;
+  if (total < 1) { showToast('至少 1 分钟', ''); return; }
+  if (total > 8 * 60) { showToast('最长 8 小时', ''); return; }
+  timerStore.setCustomDuration(total);
+  showToast('自定义时长已设为 ' + (h ? h + ' 小时 ' : '') + m + ' 分', '');
+});
+// 输入框回车直接应用
+['tw-custom-hours', 'tw-custom-mins'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('tw-custom-apply').click();
+  });
 });
 document.getElementById('tw-play').addEventListener('click', () => timerStore.toggle());
 document.getElementById('tw-reset').addEventListener('click', () => timerStore.reset());
