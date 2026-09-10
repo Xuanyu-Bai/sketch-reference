@@ -263,7 +263,7 @@
 .timer-widget #tw-display{font-size:18px;font-weight:500;color:#c89d5e;font-variant-numeric:tabular-nums;font-family:ui-monospace,Menlo,monospace}
 .timer-widget .tw-body{padding:0 12px 12px;transition:all .25s ease;max-height:400px;opacity:1}
 .timer-widget .tw-body button{font-size:12px;padding:6px 8px}
-.timer-widget.running .tw-icon::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#6ab04c;margin-left:4px;animation:tw-pulse 1.2s infinite}
+.timer-widget.running #tw-display::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#6ab04c;margin-right:6px;vertical-align:middle;animation:tw-pulse 1.2s infinite}
 @keyframes tw-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .timer-widget.finished #tw-display{color:#6ab04c}
 
