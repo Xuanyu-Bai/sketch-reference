@@ -1485,7 +1485,9 @@ class TimerStore {
   _renderDisplay() {
     const el = document.getElementById('tw-display');
     if (!el) return;
-    el.textContent = this._formatMMSS(this.remainingMs);
+    const text = this._formatMMSS(this.remainingMs);
+    // 自由计时是从 0 开始累加的"正数计时"，前缀 + 让用户一眼看出在累加
+    el.textContent = this.mode === 'free' ? '+' + text : text;
   }
 
   _renderUI() {
