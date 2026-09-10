@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>UI 设计稿 · 美术艺考生临摹 App v1.0</title>
+<style>
+:root {
+  --bg-base: #1a1a1a; --bg-canvas: #f5f3ee; --bg-elevated: #2a2a2a;
+  --bg-hover: #3a3a3a; --border: #3a3a3a; --border-strong: #5a5a5a;
+  --text-primary: #e8e5dc; --text-secondary: #8a8a8a; --text-muted: #5a5a5a;
+  --accent: #c89d5e; --accent-hover: #d4ad75; --accent-text: #1a1a1a;
+  --error: #d4604f; --success: #6ab04c;
+  --radius-md: 6px; --radius-lg: 8px;
+  --shadow-md: 0 2px 8px rgba(0,0,0,.15);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0a0a0a; color: var(--text-primary);
+  padding: 40px 20px; -webkit-font-smoothing: antialiased;
+}
+.page-title { max-width: 1600px; margin: 0 auto 32px; padding: 0 20px; }
+.page-title h1 { font-size: 28px; font-weight: 500; color: var(--accent); letter-spacing: .02em; }
+.page-title p { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+.design-grid { max-width: 1600px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 48px; }
+.design-section { background: #161616; border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden; }
+.design-section-header { padding: 16px 24px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 16px; }
+.design-section-header .num {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+  color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 13px; flex-shrink: 0;
+}
+.design-section-header .label { font-size: 15px; font-weight: 500; }
+.design-section-header .desc { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.app-frame { width: 100%; background: var(--bg-base); position: relative; overflow: hidden; }
+.app-frame.desktop { aspect-ratio: 16 / 9; max-width: 1400px; margin: 0 auto; }
+.app-frame.phone { aspect-ratio: 3 / 4; max-width: 380px; margin: 0 auto; }
+.mock-grid { display: grid; grid-template-columns: 1fr 320px; height: 100%; }
+.mock-header {
+  grid-column: 1 / -1; height: 60px; padding: 0 24px;
+  background: var(--bg-base); border-bottom: 1px solid #2a2a2a;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mock-header .title { font-size: 18px; font-weight: 500; letter-spacing: .05em; }
+.mock-header .right { display: flex; gap: 12px; align-items: center; }
+.avatar {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--accent);
+  color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 15px; cursor: pointer; flex-shrink: 0;
+}
+.avatar.blue { background: #6b8db3; color: #fff; }
+.avatar.green { background: #7ba888; color: #fff; }
+.avatar.purple { background: #8b7ba8; color: #fff; }
+.avatar.sm { width: 24px; height: 24px; font-size: 11px; }
+.mock-canvas { position: relative; background: var(--bg-canvas); overflow: hidden; }
+.mock-3d {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center 60%, #e8e2d4 0%, #f5f3ee 50%, #d8d2c2 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.mock-grid-lines {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
+  pointer-events: none; opacity: .35;
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,.15) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
+}
+.mock-hud {
+  position: absolute; top: 16px; left: 16px;
+  background: rgba(26,26,26,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  padding: 8px 12px; border-radius: var(--radius-md); font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace; line-height: 1.6;
+  border: 1px solid #2a2a2a; min-width: 140px;
+}
+.mock-hud .row { display: flex; justify-content: space-between; gap: 16px; }
+.mock-hud .k { color: #8a8a8a; }
+.mock-hud .v { color: var(--accent); font-variant-numeric: tabular-nums; }
+.mock-reticle {
+  position: absolute; top: 50%; left: 50%;
+  width: 34px; height: 34px; transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(200,157,94,.6); border-radius: 50%;
+}
+.mock-reticle::before, .mock-reticle::after {
+  content: ''; position: absolute; background: rgba(200,157,94,.6);
+}
+.mock-reticle::before { left: 50%; top: -6px; width: 1px; height: 8px; transform: translateX(-50%); }
+.mock-reticle::after { left: 50%; bottom: -6px; width: 1px; height: 8px; transform: translateX(-50%); }
+.mock-reticle .h {
+  position: absolute; top: 50%; width: 8px; height: 1px;
+  background: rgba(200,157,94,.6); transform: translateY(-50%);
+}
+.mock-reticle .h.l { left: -6px; }
+.mock-reticle .h.r { right: -6px; }
+.mock-hint {
+  position: absolute; bottom: 16px; left: 16px; font-size: 12px; color: #6b6b6b;
+  background: rgba(255,255,255,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  padding: 6px 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,.05);
+}
+.mock-sketch { position: absolute; inset: 0; pointer-events: none; }
+.mock-sketch svg { width: 100%; height: 100%; }
+.mock-toast {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: rgba(26,26,26,.95); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 10px 16px; font-size: 13px; display: flex; align-items: center; gap: 8px;
+  box-shadow: var(--shadow-md);
+}
+.mock-compare-panel {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 50%;
+  background: rgba(26,26,26,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-left: 1px solid #2a2a2a; display: flex; flex-direction: column;
+}
+.mock-compare-panel .header {
+  padding: 12px 16px; border-bottom: 1px solid #2a2a2a;
+  display: flex; align-items: center; justify-content: space-between; font-size: 13px;
+}
+.mock-compare-panel .close { cursor: pointer; opacity: .6; }
+.mock-compare-panel .section {
+  flex: 1; padding: 12px; border-bottom: 1px solid #2a2a2a;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mock-compare-panel .section:last-child { border-bottom: none; }
+.mock-compare-panel .label {
+  font-size: 11px; color: var(--text-secondary);
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.mock-compare-panel .img-placeholder {
+  flex: 1; background: #2a2a2a; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 12px; overflow: hidden;
+}
+.sidebar { background: var(--bg-base); border-left: 1px solid #2a2a2a; overflow-y: auto; padding: 16px; }
+.sidebar section { margin-bottom: 20px; }
+.sidebar h2 {
+  font-size: 11px; font-weight: 500; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--text-secondary);
+  margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #2a2a2a;
+}
+.row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.row .label { color: var(--text-secondary); }
+.row .value { color: var(--accent); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 8px; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.toggle-row input[type=checkbox] {
+  appearance: none; width: 36px; height: 20px; background: #3a3a3a;
+  border-radius: 10px; position: relative; cursor: pointer;
+  transition: background .2s; flex-shrink: 0;
+}
+.toggle-row input[type=checkbox]::after {
+  content: ''; position: absolute; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--bg-canvas);
+  top: 2px; left: 2px; transition: transform .2s;
+}
+.toggle-row input[type=checkbox]:checked { background: var(--accent); }
+.toggle-row input[type=checkbox]:checked::after { transform: translateX(16px); }
+.btn-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+button {
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border); padding: 8px 10px; border-radius: var(--radius-md);
+  font-size: 13px; font-family: inherit; cursor: pointer;
+}
+button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.color-swatches { display: flex; gap: 6px; }
+.swatch {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 2px solid transparent; cursor: pointer;
+}
+.swatch.active { border-color: var(--accent); }
+.swatch.black { background: #1a1a1a; }
+.swatch.white { background: #f5f3ee; border-color: #5a5a5a; }
+.swatch.gray { background: #8a8a8a; }
+.swatch.red { background: #d4604f; }
+.swatch.blue { background: #6b8db3; }
+.mock-lib-panel {
+  position: absolute; inset: 0;
+  background: rgba(26,26,26,.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  display: flex; flex-direction: column; padding: 24px;
+}
+.mock-lib-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.mock-lib-header h2 { font-size: 18px; font-weight: 500; }
+.mock-lib-header .meta-text { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.mock-lib-header .close { font-size: 18px; color: var(--text-secondary); cursor: pointer; }
+.mock-lib-search {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 8px 12px;
+  color: var(--text-primary); margin-bottom: 12px; font-size: 13px; font-family: inherit;
+}
+.mock-lib-filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.mock-lib-grid {
+  flex: 1; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px; align-content: start;
+}
+.mock-lib-section-title {
+  font-size: 11px; color: var(--text-secondary);
+  letter-spacing: .1em; text-transform: uppercase;
+  margin: 12px 0 8px;
+}
+.mock-card {
+  background: var(--bg-elevated); border-radius: var(--radius-lg);
+  overflow: hidden; cursor: pointer; transition: transform .15s; border: 1px solid transparent;
+}
+.mock-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.mock-card.current { border-color: var(--accent); }
+.mock-card .thumb {
+  aspect-ratio: 1; background: radial-gradient(ellipse at center 40%, #e8e2d4 0%, #c8c2b2 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.mock-card .thumb svg { width: 50%; height: 60%; opacity: .55; }
+.mock-card .meta { padding: 8px 10px; }
+.mock-card .name { font-size: 12px; color: var(--text-primary); margin-bottom: 2px; }
+.mock-card .size { font-size: 10px; color: var(--text-muted); }
+.user-picker {
+  position: absolute; inset: 0;
+  background: rgba(10,10,10,.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; align-items: center; justify-content: center;
+}
+.user-picker-inner { width: 480px; max-width: 90%; padding: 32px; }
+.user-picker h2 { text-align: center; font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+.user-picker .sub { text-align: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 24px; }
+.user-list { display: flex; flex-direction: column; gap: 8px; }
+.user-item {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all .15s;
+}
+.user-item:hover { border-color: var(--accent); }
+.user-item .name { flex: 1; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.user-item .last { font-size: 11px; color: var(--text-muted); }
+.user-item .badge {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px;
+  background: var(--accent); color: var(--accent-text);
+}
+.user-add {
+  background: transparent; border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px;
+  cursor: pointer; color: var(--text-secondary); font-size: 14px;
+}
+.user-add:hover { border-color: var(--accent); color: var(--accent); }
+.user-menu {
+  position: absolute; top: 70px; right: 16px; width: 280px;
+  background: rgba(26,26,26,.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); padding: 8px; z-index: 100;
+}
+.user-menu .user-card { padding: 12px; display: flex; align-items: center; gap: 12px; }
+.user-menu .user-card .name { font-size: 14px; font-weight: 500; }
+.user-menu .user-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.user-menu .divider { height: 1px; background: var(--border); margin: 4px 8px; }
+.user-menu .menu-item {
+  padding: 10px 12px; border-radius: var(--radius-md);
+  font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+}
+.user-menu .menu-item:hover { background: var(--bg-hover); }
+.user-menu .menu-item .icon { font-size: 14px; opacity: .7; }
+.user-menu .menu-item.danger { color: var(--error); }
+.user-menu .menu-section-label {
+  padding: 8px 12px 4px; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.palette {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px; padding: 24px;
+}
+.palette .swatch-card {
+  background: var(--bg-elevated); border-radius: var(--radius-lg);
+  overflow: hidden; border: 1px solid var(--border);
+}
+.palette .swatch-card .color { height: 80px; }
+.palette .swatch-card .info { padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+.palette .swatch-card .name { color: var(--text-primary); font-family: inherit; font-size: 12px; margin-bottom: 2px; }
+.component-row {
+  padding: 24px; display: flex; align-items: center; flex-wrap: wrap;
+  gap: 16px; border-bottom: 1px solid #2a2a2a;
+}
+.component-row:last-child { border-bottom: none; }
+.component-row .label {
+  width: 80px; font-size: 11px; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>UI 设计稿 · 美术艺考生临摹 App v1.0</h1>
+  <p>设计 Token · 组件库 · 9 个核心界面预览 · 参考 boot-v2.png 的暗色玻璃风</p>
+</div>
+
+<div class="design-grid">
+
+  <!-- 1. Colors -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">1</div><div class="label">设计 Token · 颜色</div>
+      <div class="desc">CSS 变量已实现在 index.html</div>
+    </div>
+    <div class="palette">
+      <div class="swatch-card"><div class="color" style="background:#1a1a1a"></div><div class="info"><div class="name">bg-base</div>#1a1a1a</div></div>
+      <div class="swatch-card"><div class="color" style="background:#f5f3ee"></div><div class="info"><div class="name">bg-canvas</div>#f5f3ee</div></div>
+      <div class="swatch-card"><div class="color" style="background:#2a2a2a"></div><div class="info"><div class="name">bg-elevated</div>#2a2a2a</div></div>
+      <div class="swatch-card"><div class="color" style="background:#3a3a3a"></div><div class="info"><div class="name">bg-hover</div>#3a3a3a</div></div>
+      <div class="swatch-card"><div class="color" style="background:#c89d5e"></div><div class="info"><div class="name">accent</div>#c89d5e</div></div>
+      <div class="swatch-card"><div class="color" style="background:#e8e5dc"></div><div class="info"><div class="name">text-primary</div>#e8e5dc</div></div>
+      <div class="swatch-card"><div class="color" style="background:#8a8a8a"></div><div class="info"><div class="name">text-secondary</div>#8a8a8a</div></div>
+      <div class="swatch-card"><div class="color" style="background:#d4604f"></div><div class="info"><div class="name">error</div>#d4604f</div></div>
+    </div>
+  </div>
+
+  <!-- 2. Components -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">2</div><div class="label">组件库</div>
+      <div class="desc">Button / Toggle / Slider / Color / Avatar</div>
+    </div>
+    <div class="component-row">
+      <div class="label">Button</div>
+      <button>默认</button>
+      <button class="active">选中</button>
+      <button disabled style="opacity:.4">禁用</button>
+    </div>
+    <div class="component-row">
+      <div class="label">Toggle</div>
+      <label class="toggle-row" style="margin:0"><input type="checkbox" checked></label>
+      <label class="toggle-row" style="margin:0"><input type="checkbox"></label>
+    </div>
+    <div class="component-row">
+      <div class="label">Slider</div>
+      <div style="flex:1; min-width:200px;">
+        <div class="row"><span class="label">灵敏度</span><span class="value">50%</span></div>
+        <input type="range" value="50" min="0" max="100">
+      </div>
+    </div>
+    <div class="component-row">
+      <div class="label">Colors</div>
+      <div class="color-swatches">
+        <div class="swatch black active"></div>
+        <div class="swatch white"></div>
+        <div class="swatch gray"></div>
+        <div class="swatch red"></div>
+        <div class="swatch blue"></div>
+      </div>
+    </div>
+    <div class="component-row">
+      <div class="label">Avatar</div>
+      <div class="avatar">张</div>
+      <div class="avatar blue">李</div>
+      <div class="avatar green">王</div>
+      <div class="avatar purple">陈</div>
+    </div>
+  </div>
+</div>
+
+<!-- Sections 3-9 in next file due to size -->
+<div style="text-align:center;color:#8a8a8a;padding:40px">
+  Sections 3-9 (主界面 / 画板模式 / 同框对比 / 模型库 / 用户选择器 / 用户菜单 / 移动端) 见 mockup-full.html
+</div>
+
+</body>
+</html>

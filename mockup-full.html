@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>UI 设计稿 · 美术艺考生临摹 App v1.0 - 全界面</title>
+<style>
+:root {
+  --bg-base: #1a1a1a; --bg-canvas: #f5f3ee; --bg-elevated: #2a2a2a;
+  --bg-hover: #3a3a3a; --border: #3a3a3a; --border-strong: #5a5a5a;
+  --text-primary: #e8e5dc; --text-secondary: #8a8a8a; --text-muted: #5a5a5a;
+  --accent: #c89d5e; --accent-hover: #d4ad75; --accent-text: #1a1a1a;
+  --error: #d4604f; --success: #6ab04c;
+  --radius-md: 6px; --radius-lg: 8px;
+  --shadow-md: 0 2px 8px rgba(0,0,0,.15);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0a0a0a; color: var(--text-primary);
+  padding: 40px 20px; -webkit-font-smoothing: antialiased;
+}
+.page-title { max-width: 1600px; margin: 0 auto 32px; padding: 0 20px; }
+.page-title h1 { font-size: 28px; font-weight: 500; color: var(--accent); letter-spacing: .02em; }
+.page-title p { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+.design-grid { max-width: 1600px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 48px; }
+.design-section { background: #161616; border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden; }
+.design-section-header { padding: 16px 24px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 16px; }
+.design-section-header .num {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+  color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 13px; flex-shrink: 0;
+}
+.design-section-header .label { font-size: 15px; font-weight: 500; }
+.design-section-header .desc { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.app-frame { width: 100%; background: var(--bg-base); position: relative; overflow: hidden; }
+.app-frame.desktop { aspect-ratio: 16 / 9; max-width: 1400px; margin: 0 auto; }
+.app-frame.phone { aspect-ratio: 3 / 4; max-width: 380px; margin: 0 auto; }
+.mock-grid { display: grid; grid-template-columns: 1fr 320px; height: 100%; }
+.mock-header {
+  grid-column: 1 / -1; height: 60px; padding: 0 24px;
+  background: var(--bg-base); border-bottom: 1px solid #2a2a2a;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mock-header .title { font-size: 18px; font-weight: 500; letter-spacing: .05em; }
+.mock-header .right { display: flex; gap: 12px; align-items: center; }
+.avatar {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--accent);
+  color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 15px; cursor: pointer; flex-shrink: 0;
+  border: 2px solid transparent;
+}
+.avatar.blue { background: #6b8db3; color: #fff; }
+.avatar.green { background: #7ba888; color: #fff; }
+.avatar.purple { background: #8b7ba8; color: #fff; }
+.avatar.sm { width: 24px; height: 24px; font-size: 11px; }
+.avatar.active { border-color: var(--accent); }
+.mock-canvas { position: relative; background: var(--bg-canvas); overflow: hidden; }
+.mock-3d {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center 60%, #e8e2d4 0%, #f5f3ee 50%, #d8d2c2 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.mock-3d.dimmed { opacity: .35; }
+.mock-grid-lines {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
+  pointer-events: none; opacity: .35;
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,.15) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
+}
+.mock-hud {
+  position: absolute; top: 16px; left: 16px;
+  background: rgba(26,26,26,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  padding: 8px 12px; border-radius: var(--radius-md); font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace; line-height: 1.6;
+  border: 1px solid #2a2a2a; min-width: 140px;
+}
+.mock-hud .row { display: flex; justify-content: space-between; gap: 16px; }
+.mock-hud .k { color: #8a8a8a; }
+.mock-hud .v { color: var(--accent); font-variant-numeric: tabular-nums; }
+.mock-reticle {
+  position: absolute; top: 50%; left: 50%;
+  width: 34px; height: 34px; transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(200,157,94,.6); border-radius: 50%;
+}
+.mock-reticle::before, .mock-reticle::after { content: ''; position: absolute; background: rgba(200,157,94,.6); }
+.mock-reticle::before { left: 50%; top: -6px; width: 1px; height: 8px; transform: translateX(-50%); }
+.mock-reticle::after { left: 50%; bottom: -6px; width: 1px; height: 8px; transform: translateX(-50%); }
+.mock-reticle .h {
+  position: absolute; top: 50%; width: 8px; height: 1px;
+  background: rgba(200,157,94,.6); transform: translateY(-50%);
+}
+.mock-reticle .h.l { left: -6px; }
+.mock-reticle .h.r { right: -6px; }
+.mock-hint {
+  position: absolute; bottom: 16px; left: 16px; font-size: 12px; color: #6b6b6b;
+  background: rgba(255,255,255,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  padding: 6px 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,.05);
+}
+.mock-sketch { position: absolute; inset: 0; pointer-events: none; }
+.mock-sketch svg { width: 100%; height: 100%; }
+.mock-toast {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: rgba(26,26,26,.95); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 10px 16px; font-size: 13px; display: flex; align-items: center; gap: 8px;
+  box-shadow: var(--shadow-md);
+}
+.mock-compare-panel {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 50%;
+  background: rgba(26,26,26,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-left: 1px solid #2a2a2a; display: flex; flex-direction: column;
+}
+.mock-compare-panel .header {
+  padding: 12px 16px; border-bottom: 1px solid #2a2a2a;
+  display: flex; align-items: center; justify-content: space-between; font-size: 13px;
+}
+.mock-compare-panel .close { cursor: pointer; opacity: .6; }
+.mock-compare-panel .section {
+  flex: 1; padding: 12px; border-bottom: 1px solid #2a2a2a;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mock-compare-panel .section:last-child { border-bottom: none; }
+.mock-compare-panel .label {
+  font-size: 11px; color: var(--text-secondary);
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.mock-compare-panel .img-placeholder {
+  flex: 1; background: #2a2a2a; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 12px; overflow: hidden;
+}
+.sidebar { background: var(--bg-base); border-left: 1px solid #2a2a2a; overflow-y: auto; padding: 16px; }
+.sidebar section { margin-bottom: 20px; }
+.sidebar h2 {
+  font-size: 11px; font-weight: 500; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--text-secondary);
+  margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #2a2a2a;
+}
+.sketch-section { background: rgba(200,157,94,.08); padding: 12px; border-radius: var(--radius-lg); border: 1px solid var(--accent); }
+.row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.row .label { color: var(--text-secondary); }
+.row .value { color: var(--accent); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 8px; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.toggle-row input[type=checkbox] {
+  appearance: none; width: 36px; height: 20px; background: #3a3a3a;
+  border-radius: 10px; position: relative; cursor: pointer;
+  transition: background .2s; flex-shrink: 0;
+}
+.toggle-row input[type=checkbox]::after {
+  content: ''; position: absolute; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--bg-canvas);
+  top: 2px; left: 2px; transition: transform .2s;
+}
+.toggle-row input[type=checkbox]:checked { background: var(--accent); }
+.toggle-row input[type=checkbox]:checked::after { transform: translateX(16px); }
+.btn-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+button {
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border); padding: 8px 10px; border-radius: var(--radius-md);
+  font-size: 13px; font-family: inherit; cursor: pointer;
+}
+button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.color-swatches { display: flex; gap: 6px; }
+.swatch { width: 28px; height: 28px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
+.swatch.active { border-color: var(--accent); }
+.swatch.black { background: #1a1a1a; }
+.swatch.white { background: #f5f3ee; border-color: #5a5a5a; }
+.swatch.gray { background: #8a8a8a; }
+.swatch.red { background: #d4604f; }
+.swatch.blue { background: #6b8db3; }
+.mock-lib-panel {
+  position: absolute; inset: 0;
+  background: rgba(26,26,26,.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  display: flex; flex-direction: column; padding: 24px;
+}
+.mock-lib-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.mock-lib-header h2 { font-size: 18px; font-weight: 500; }
+.mock-lib-header .meta-text { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.mock-lib-header .close { font-size: 18px; color: var(--text-secondary); cursor: pointer; }
+.mock-lib-search {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 8px 12px;
+  color: var(--text-primary); margin-bottom: 12px; font-size: 13px; font-family: inherit;
+}
+.mock-lib-filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.mock-lib-grid {
+  flex: 1; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px; align-content: start;
+}
+.mock-lib-section-title {
+  font-size: 11px; color: var(--text-secondary);
+  letter-spacing: .1em; text-transform: uppercase;
+  margin: 12px 0 8px;
+}
+.mock-card {
+  background: var(--bg-elevated); border-radius: var(--radius-lg);
+  overflow: hidden; cursor: pointer; transition: transform .15s; border: 1px solid transparent;
+}
+.mock-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.mock-card.current { border-color: var(--accent); }
+.mock-card .thumb {
+  aspect-ratio: 1; background: radial-gradient(ellipse at center 40%, #e8e2d4 0%, #c8c2b2 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.mock-card .thumb svg { width: 50%; height: 60%; opacity: .55; }
+.mock-card .meta { padding: 8px 10px; }
+.mock-card .name { font-size: 12px; color: var(--text-primary); margin-bottom: 2px; }
+.mock-card .size { font-size: 10px; color: var(--text-muted); }
+.user-picker {
+  position: absolute; inset: 0;
+  background: rgba(10,10,10,.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; align-items: center; justify-content: center;
+}
+.user-picker-inner { width: 480px; max-width: 90%; padding: 32px; }
+.user-picker h2 { text-align: center; font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+.user-picker .sub { text-align: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 24px; }
+.user-list { display: flex; flex-direction: column; gap: 8px; }
+.user-item {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all .15s;
+}
+.user-item:hover { border-color: var(--accent); }
+.user-item .name { flex: 1; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.user-item .last { font-size: 11px; color: var(--text-muted); }
+.user-item .badge {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px;
+  background: var(--accent); color: var(--accent-text);
+}
+.user-add {
+  background: transparent; border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px;
+  cursor: pointer; color: var(--text-secondary); font-size: 14px;
+}
+.user-add:hover { border-color: var(--accent); color: var(--accent); }
+.user-menu {
+  position: absolute; top: 70px; right: 16px; width: 280px;
+  background: rgba(26,26,26,.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); padding: 8px; z-index: 100;
+}
+.user-menu .user-card { padding: 12px; display: flex; align-items: center; gap: 12px; }
+.user-menu .user-card .name { font-size: 14px; font-weight: 500; }
+.user-menu .user-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.user-menu .divider { height: 1px; background: var(--border); margin: 4px 8px; }
+.user-menu .menu-item {
+  padding: 10px 12px; border-radius: var(--radius-md);
+  font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+}
+.user-menu .menu-item:hover { background: var(--bg-hover); }
+.user-menu .menu-item .icon { font-size: 14px; opacity: .7; }
+.user-menu .menu-item.danger { color: var(--error); }
+.user-menu .menu-section-label {
+  padding: 8px 12px 4px; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>UI 设计稿 · 全界面预览</h1>
+  <p>美术艺考生临摹 App v1.0 · 9 个核心界面</p>
+</div>
+
+<div class="design-grid">
+
+  <!-- 3. Main Interface -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">3</div><div class="label">主界面 · 默认状态（视角模式）</div>
+      <div class="desc">3D 画布 + 工具栏 + HUD + 用户头像</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+          <div class="right">
+            <button style="padding:6px 12px;font-size:12px">模型库 (30)</button>
+            <div class="avatar">张</div>
+          </div>
+        </div>
+        <div class="mock-canvas">
+          <div class="mock-3d"><svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="headGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3a3530"/>
+      <stop offset="50%" stop-color="#5a5045"/>
+      <stop offset="100%" stop-color="#2a2520"/>
+    </linearGradient>
+    <radialGradient id="rimLight" cx="20%" cy="30%" r="40%">
+      <stop offset="0%" stop-color="#d4ad75" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#d4ad75" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M 70 220 Q 70 260 65 280 L 135 280 Q 130 260 130 220 Z" fill="url(#headGrad)"/>
+  <ellipse cx="100" cy="130" rx="70" ry="90" fill="url(#headGrad)"/>
+  <ellipse cx="100" cy="130" rx="70" ry="90" fill="url(#rimLight)"/>
+  <ellipse cx="80" cy="125" rx="10" ry="6" fill="#1a1410" opacity="0.6"/>
+  <ellipse cx="120" cy="125" rx="10" ry="6" fill="#1a1410" opacity="0.6"/>
+  <path d="M 100 145 L 90 165 L 100 170 L 110 165 Z" fill="#1a1410" opacity="0.7"/>
+  <path d="M 85 185 Q 100 192 115 185" stroke="#1a1410" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 35 100 Q 50 50 100 45 Q 150 50 165 100 Q 165 80 145 70 Q 130 60 100 60 Q 70 60 55 70 Q 35 80 35 100 Z" fill="#1a1410"/>
+</svg></div>
+          <div class="mock-grid-lines"></div>
+          <div class="mock-hud">
+            <div class="row"><span class="k">AZ</span><span class="v">35°</span></div>
+            <div class="row"><span class="k">EL</span><span class="v">12°</span></div>
+            <div class="row"><span class="k">DIST</span><span class="v">1.42</span></div>
+          </div>
+          <div class="mock-reticle"><div class="h l"></div><div class="h r"></div></div>
+          <div class="mock-hint">鼠标拖动 = 视角 / 滚轮 = 缩放</div>
+        </div>
+        <div class="sidebar">
+          <section>
+            <h2>模型</h2>
+            <div class="row"><span class="label">当前</span><span class="value">男中年 3-4 侧</span></div>
+            <button style="width:100%;margin-top:6px">切换模型</button>
+          </section>
+          <section>
+            <h2>光源</h2>
+            <div class="row"><span class="label">水平角</span><span class="value">45°</span></div>
+            <input type="range" value="45" min="0" max="360">
+            <div class="row"><span class="label">仰角</span><span class="value">30°</span></div>
+            <input type="range" value="30" min="-90" max="90">
+            <div class="row"><span class="label">强度</span><span class="value">100%</span></div>
+            <input type="range" value="100" min="0" max="200">
+            <div class="row"><span class="label">环境光</span><span class="value">30%</span></div>
+            <input type="range" value="30" min="0" max="100">
+            <div class="btn-group" style="grid-template-columns:repeat(4,1fr);margin-top:6px">
+              <button>平</button><button class="active">侧</button><button>顶</button><button>伦</button>
+            </div>
+          </section>
+          <section>
+            <h2>视角</h2>
+            <div class="row"><span class="label">灵敏度</span><span class="value">50%</span></div>
+            <input type="range" value="50" min="0" max="100">
+            <div class="row"><span class="label">摆动范围</span><span class="value">30%</span></div>
+            <input type="range" value="30" min="0" max="100">
+            <div class="row"><span class="label">阻尼</span><span class="value">0.15</span></div>
+            <input type="range" value="15" min="0" max="100">
+            <div class="btn-group" style="grid-template-columns:repeat(6,1fr);margin-top:6px">
+              <button>正</button><button class="active">3-4</button><button>全</button><button>后</button><button>背</button><button>顶</button>
+            </div>
+          </section>
+          <section>
+            <h2>画板</h2>
+            <div class="row"><span class="label">模式</span></div>
+            <div class="btn-group" style="grid-template-columns:1fr 1fr">
+              <button class="active">视角</button><button>画笔</button>
+            </div>
+            <div class="row" style="margin-top:10px"><span class="label">颜色</span></div>
+            <div class="color-swatches">
+              <div class="swatch black active"></div>
+              <div class="swatch white"></div>
+              <div class="swatch gray"></div>
+              <div class="swatch red"></div>
+            </div>
+            <div class="row" style="margin-top:10px"><span class="label">线宽</span><span class="value">4 px</span></div>
+            <input type="range" value="4" min="1" max="50">
+            <div class="row" style="margin-top:10px"><span class="label">不透明度</span><span class="value">80%</span></div>
+            <input type="range" value="80" min="0" max="100">
+            <div class="btn-group" style="grid-template-columns:1fr 1fr 1fr;margin-top:8px">
+              <button>撤销</button><button>重做</button><button>清空</button>
+            </div>
+            <button style="width:100%;margin-top:6px;background:var(--accent);color:var(--accent-text);border-color:var(--accent)">📷 截图保存</button>
+          </section>
+          <section>
+            <h2>显示</h2>
+            <div class="toggle-row"><span>底盘</span><input type="checkbox" checked></div>
+            <div class="toggle-row"><span>线框</span><input type="checkbox"></div>
+            <div class="toggle-row"><span>准星</span><input type="checkbox" checked></div>
+            <div class="toggle-row"><span>镜像</span><input type="checkbox"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Sketch Mode -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">4</div><div class="label">画板模式（绘画中）</div>
+      <div class="desc">用户在 3D 视图上叠加画板，画了几笔</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+          <div class="right">
+            <button style="padding:6px 12px;font-size:12px">模型库 (30)</button>
+            <div class="avatar">张</div>
+          </div>
+        </div>
+        <div class="mock-canvas">
+          <div class="mock-3d"><svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="headGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3a3530"/>
+      <stop offset="50%" stop-color="#5a5045"/>
+      <stop offset="100%" stop-color="#2a2520"/>
+    </linearGradient>
+    <radialGradient id="rimLight" cx="20%" cy="30%" r="40%">
+      <stop offset="0%" stop-color="#d4ad75" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#d4ad75" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M 70 220 Q 70 260 65 280 L 135 280 Q 130 260 130 220 Z" fill="url(#headGrad)"/>
+  <ellipse cx="100" cy="130" rx="70" ry="90" fill="url(#headGrad)"/>
+  <ellipse cx="100" cy="130" rx="70" ry="90" fill="url(#rimLight)"/>
+  <ellipse cx="80" cy="125" rx="10" ry="6" fill="#1a1410" opacity="0.6"/>
+  <ellipse cx="120" cy="125" rx="10" ry="6" fill="#1a1410" opacity="0.6"/>
+  <path d="M 100 145 L 90 165 L 100 170 L 110 165 Z" fill="#1a1410" opacity="0.7"/>
+  <path d="M 85 185 Q 100 192 115 185" stroke="#1a1410" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 35 100 Q 50 50 100 45 Q 150 50 165 100 Q 165 80 145 70 Q 130 60 100 60 Q 70 60 55 70 Q 35 80 35 100 Z" fill="#1a1410"/>
+</svg></div>
+          <div class="mock-grid-lines"></div>
+          <div class="mock-sketch">
+            <svg viewBox="0 0 100 75" preserveAspectRatio="none">
+              <path d="M 50 5 L 50 70" stroke="#1a1a1a" stroke-width=".15" opacity=".4" fill="none"/>
+              <path d="M 20 35 L 80 35" stroke="#1a1a1a" stroke-width=".15" opacity=".4" fill="none"/>
+              <circle cx="50" cy="32" r="8" stroke="#1a1a1a" stroke-width=".2" opacity=".6" fill="none"/>
+              <path d="M 38 12 Q 50 8 62 12 Q 65 22 65 32 Q 65 45 60 50 Q 55 52 50 52 Q 45 52 40 50 Q 35 45 35 32 Q 35 22 38 12 Z" stroke="#1a1a1a" stroke-width=".3" fill="none" opacity=".7"/>
+              <path d="M 48 32 Q 47 40 50 42 Q 53 40 52 32" stroke="#1a1a1a" stroke-width=".3" fill="none" opacity=".7"/>
+              <ellipse cx="43" cy="28" rx="3" ry="2" stroke="#1a1a1a" stroke-width=".25" fill="none" opacity=".7"/>
+              <ellipse cx="57" cy="28" rx="3" ry="2" stroke="#1a1a1a" stroke-width=".25" fill="none" opacity=".7"/>
+              <path d="M 58 18 L 64 22 M 58 22 L 64 26 M 58 26 L 64 30 M 58 30 L 64 34" stroke="#1a1a1a" stroke-width=".15" opacity=".5"/>
+            </svg>
+          </div>
+          <div class="mock-hud">
+            <div class="row"><span class="k">画笔</span><span class="v">4px</span></div>
+            <div class="row"><span class="k">笔触</span><span class="v">12</span></div>
+          </div>
+          <div class="mock-toast"><span style="color:var(--accent)">●</span><span>画笔模式 · 按 B 切换回视角</span></div>
+        </div>
+        <div class="sidebar">
+          <section>
+            <h2>模型</h2>
+            <div class="row"><span class="label">当前</span><span class="value">男中年 3-4 侧</span></div>
+            <button style="width:100%;margin-top:6px">切换模型</button>
+          </section>
+          <section class="sketch-section">
+            <h2 style="color:var(--accent)">画板 · 绘画中</h2>
+            <div class="row"><span class="label">模式</span></div>
+            <div class="btn-group" style="grid-template-columns:1fr 1fr">
+              <button>视角</button><button class="active">画笔</button>
+            </div>
+            <div class="row" style="margin-top:10px"><span class="label">颜色</span></div>
+            <div class="color-swatches">
+              <div class="swatch black active"></div>
+              <div class="swatch white"></div>
+              <div class="swatch gray"></div>
+              <div class="swatch red"></div>
+            </div>
+            <div class="row" style="margin-top:10px"><span class="label">线宽</span><span class="value">4 px</span></div>
+            <input type="range" value="4" min="1" max="50">
+            <div class="row" style="margin-top:10px"><span class="label">不透明度</span><span class="value">80%</span></div>
+            <input type="range" value="80" min="0" max="100">
+            <div class="toggle-row"><span>压感</span><input type="checkbox" checked></div>
+            <div class="btn-group" style="grid-template-columns:1fr 1fr 1fr;margin-top:8px">
+              <button>↶ 撤销</button><button>↷ 重做</button><button>🗑 清空</button>
+            </div>
+            <button style="width:100%;margin-top:6px;background:var(--accent);color:var(--accent-text);border-color:var(--accent)">📷 截图保存</button>
+          </section>
+          <section>
+            <h2>快捷键</h2>
+            <div class="row"><span class="label">B</span><span class="value">切模式</span></div>
+            <div class="row"><span class="label">Z / Y</span><span class="value">撤销/重做</span></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Compare Mode -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">5</div><div class="label">同框对比模式</div>
+      <div class="desc">右侧 50% 面板：自己画的 vs 参考原图</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+          <div class="right">
+            <button style="padding:6px 12px;font-size:12px">模型库 (30)</button>
+            <div class="avatar">张</div>
+          </div>
+        </div>
+        <div class="mock-canvas">
+          <div class="mock-3d dimmed"><svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg"><ellipse cx="100" cy="130" rx="70" ry="90" fill="#3a3530"/></svg></div>
+          <div class="mock-grid-lines"></div>
+          <div class="mock-compare-panel">
+            <div class="header">
+              <span>📊 同框对比</span>
+              <span class="close">✕</span>
+            </div>
+            <div class="section">
+              <div class="label">自己画的</div>
+              <div class="img-placeholder" style="background:#e8e2d4;color:#3a3530">
+                <svg viewBox="0 0 100 75" style="width:80%;height:80%">
+                  <path d="M 38 12 Q 50 8 62 12 Q 65 22 65 32 Q 65 45 60 50 Q 55 52 50 52 Q 45 52 40 50 Q 35 45 35 32 Q 35 22 38 12 Z" stroke="#1a1a1a" stroke-width=".3" fill="none"/>
+                  <path d="M 48 32 Q 47 40 50 42 Q 53 40 52 32" stroke="#1a1a1a" stroke-width=".3" fill="none"/>
+                </svg>
+              </div>
+            </div>
+            <div class="section">
+              <div class="label">参考原图</div>
+              <div class="img-placeholder" style="background:#fff;color:#666;font-size:11px">natural.png</div>
+              <div>
+                <div class="row" style="margin-bottom:4px"><span class="label">透明度</span><span class="value">60%</span></div>
+                <input type="range" value="60" min="0" max="100">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sidebar">
+          <section>
+            <h2>显示</h2>
+            <div class="toggle-row"><span>同框对比</span><input type="checkbox" checked></div>
+            <div class="toggle-row"><span>底盘</span><input type="checkbox" checked></div>
+            <div class="toggle-row"><span>准星</span><input type="checkbox"></div>
+          </section>
+          <section>
+            <h2>导出</h2>
+            <button style="width:100%">📷 合成截图（含画板）</button>
+            <button style="width:100%;margin-top:6px">💾 保存到作品库</button>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Model Library -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">6</div><div class="label">模型库</div>
+      <div class="desc">抽屉式，覆盖整个画布</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+          <div class="right">
+            <button style="padding:6px 12px;font-size:12px;background:var(--accent);color:var(--accent-text);border-color:var(--accent)">模型库 (30) ✕</button>
+            <div class="avatar">张</div>
+          </div>
+        </div>
+        <div class="mock-canvas">
+          <div class="mock-lib-panel">
+            <div class="mock-lib-header">
+              <h2>模型库</h2>
+              <span class="meta-text">30 / 30 已下载</span>
+              <span class="close">✕</span>
+            </div>
+            <input type="text" class="mock-lib-search" placeholder="🔍 搜索模型名称...">
+            <div class="mock-lib-filters">
+              <button style="font-size:12px">全部性别</button>
+              <button style="font-size:12px">全部年龄</button>
+              <button style="font-size:12px">全部角度</button>
+              <button style="font-size:12px">已下载 ✓</button>
+            </div>
+            <div class="mock-lib-section-title">男 · 6 个</div>
+            <div class="mock-lib-grid">
+              <div class="mock-card current">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男中年 3-4 侧</div><div class="size">2.3 MB · 8K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男青年 正面</div><div class="size">1.8 MB · 6K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男老年 全侧</div><div class="size">2.5 MB · 9K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男青年 背面</div><div class="size">1.6 MB · 5K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男中年 顶视</div><div class="size">2.0 MB · 7K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#3a3530"/></svg></div>
+                <div class="meta"><div class="name">男老年 3-4 侧</div><div class="size">2.4 MB · 8K 面</div></div>
+              </div>
+            </div>
+            <div class="mock-lib-section-title">女 · 6 个</div>
+            <div class="mock-lib-grid">
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#5a5045"/></svg></div>
+                <div class="meta"><div class="name">女青年 3-4 侧</div><div class="size">1.9 MB · 7K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#5a5045"/></svg></div>
+                <div class="meta"><div class="name">女中年 正面</div><div class="size">2.1 MB · 7K 面</div></div>
+              </div>
+              <div class="mock-card">
+                <div class="thumb"><svg viewBox="0 0 60 80"><ellipse cx="30" cy="35" rx="14" ry="18" fill="#5a5045"/></svg></div>
+                <div class="meta"><div class="name">女青年 全侧</div><div class="size">1.7 MB · 6K 面</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sidebar" style="opacity:.4;pointer-events:none">
+          <section>
+            <h2>模型</h2>
+            <div class="row"><span class="label">当前</span><span class="value">男中年 3-4 侧</span></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. User Picker -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">7</div><div class="label">用户选择器</div>
+      <div class="desc">首次启动 / 冷启动 / 切换用户时</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+        </div>
+        <div class="mock-canvas">
+          <div class="user-picker">
+            <div class="user-picker-inner">
+              <h2>选择你的身份</h2>
+              <div class="sub">每个用户的偏好、作品、模型完全隔离</div>
+              <div class="user-list">
+                <div class="user-item">
+                  <div class="avatar">张</div>
+                  <div class="name">张三 <span class="badge">设备主人</span></div>
+                  <div class="last">最后活跃 2 小时前</div>
+                </div>
+                <div class="user-item">
+                  <div class="avatar blue">李</div>
+                  <div class="name">李四</div>
+                  <div class="last">最后活跃 昨天</div>
+                </div>
+                <div class="user-item">
+                  <div class="avatar green">王</div>
+                  <div class="name">王五</div>
+                  <div class="last">最后活跃 3 天前</div>
+                </div>
+                <div class="user-add">
+                  <div class="avatar" style="background:transparent;border:1px dashed var(--border-strong);color:var(--text-secondary)">+</div>
+                  <div class="name">新建用户</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. User Menu Dropdown -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">8</div><div class="label">用户菜单（顶栏头像点击）</div>
+      <div class="desc">用户信息 / 切换 / 数据管理</div>
+    </div>
+    <div class="app-frame desktop">
+      <div class="mock-grid">
+        <div class="mock-header">
+          <div class="title">素描临摹 · 3D 参考</div>
+          <div class="right">
+            <button style="padding:6px 12px;font-size:12px">模型库 (30)</button>
+            <div class="avatar active">张</div>
+          </div>
+        </div>
+        <div class="mock-canvas">
+          <div class="mock-3d dimmed"><svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg"><ellipse cx="100" cy="130" rx="70" ry="90" fill="#3a3530"/></svg></div>
+        </div>
+        <div class="user-menu">
+          <div class="user-card">
+            <div class="avatar">张</div>
+            <div>
+              <div class="name">张三</div>
+              <div class="sub">156 MB · 设备主人</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="menu-section-label">切换用户</div>
+          <div class="menu-item">
+            <span class="avatar sm">张</span><span>张三（当前）</span>
+            <span style="margin-left:auto;color:var(--success);font-size:12px">✓</span>
+          </div>
+          <div class="menu-item">
+            <span class="avatar blue sm">李</span><span>李四</span>
+          </div>
+          <div class="menu-item">
+            <span class="avatar green sm">王</span><span>王五</span>
+          </div>
+          <div class="menu-item">
+            <span style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;border:1px dashed var(--border-strong);color:var(--text-secondary)">+</span>
+            <span>新建用户</span>
+          </div>
+          <div class="divider"></div>
+          <div class="menu-section-label">数据管理</div>
+          <div class="menu-item">
+            <span class="icon">📊</span><span>存储空间</span>
+            <span style="margin-left:auto;color:var(--text-secondary);font-size:11px">78%</span>
+          </div>
+          <div class="menu-item">
+            <span class="icon">📤</span><span>导出我的数据</span>
+          </div>
+          <div class="menu-item">
+            <span class="icon">📥</span><span>导入数据</span>
+          </div>
+          <div class="menu-item danger">
+            <span class="icon">🗑</span><span>删除此用户</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. Mobile View -->
+  <div class="design-section">
+    <div class="design-section-header">
+      <div class="num">9</div><div class="label">移动端（&lt; 768px）</div>
+      <div class="desc">底部抽屉代替右侧栏</div>
+    </div>
+    <div style="display:flex;gap:24px;justify-content:center;padding:24px;flex-wrap:wrap;background:#0a0a0a">
+      <div class="app-frame phone">
+        <div style="height:60px;background:var(--bg-base);border-bottom:1px solid #2a2a2a;display:flex;align-items:center;justify-content:space-between;padding:0 16px">
+          <div style="font-size:14px;font-weight:500">素描临摹</div>
+          <div class="avatar" style="width:28px;height:28px;font-size:12px">张</div>
+        </div>
+        <div style="height:calc(100% - 60px - 200px);background:var(--bg-canvas);position:relative">
+          <div class="mock-3d" style="position:absolute;inset:0">
+            <svg viewBox="0 0 200 280" style="width:60%;height:80%">
+              <ellipse cx="100" cy="130" rx="70" ry="90" fill="#3a3530"/>
+            </svg>
+          </div>
+          <div class="mock-hud" style="font-size:10px;padding:6px 8px">
+            <div class="row"><span class="k">AZ</span><span class="v">35°</span></div>
+          </div>
+        </div>
+        <div style="height:200px;background:var(--bg-base);border-top:1px solid #2a2a2a;padding:12px;overflow-y:auto">
+          <h2 style="font-size:11px;color:var(--text-secondary);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">画板</h2>
+          <div class="btn-group" style="grid-template-columns:1fr 1fr;margin-bottom:8px">
+            <button class="active">视角</button><button>画笔</button>
+          </div>
+          <div class="color-swatches" style="margin-bottom:8px">
+            <div class="swatch black active"></div>
+            <div class="swatch white"></div>
+            <div class="swatch gray"></div>
+            <div class="swatch red"></div>
+          </div>
+          <div class="row" style="margin-bottom:4px"><span class="label">线宽</span><span class="value">4px</span></div>
+          <input type="range" value="4" min="1" max="50" style="margin-bottom:8px">
+          <button style="width:100%;background:var(--accent);color:var(--accent-text);border-color:var(--accent)">📷 截图</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="max-width:1600px;margin:48px auto;padding:24px;text-align:center;color:var(--text-muted);font-size:12px">
+  配套文档：docs/08-ui-design.md (token + 组件规范) + docs/09-data-strategy.md (多用户策略)
+</div>
+
+</body>
+</html>
