@@ -730,7 +730,11 @@ class UserManager {
     const user = this.users.find(u => u.id === id);
     if (user && user.isOwner) return { error: '设备主人不能直接删除，请先把其他人设为设备主人' };
     this.users = this.users.filter(u => u.id !== id);
-    localStorage.removeItem('sketch-ref-prefs-' + id);
+    // v1.1: 同时清掉该用户的 prefs/timer/history/last-saved，避免泄漏
+    ['sketch-ref-prefs-' + id, 'sketch-ref-prefs-' + id + '-last-saved',
+     'sketch-ref-timer-' + id, 'sketch-ref-history-' + id].forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
     this._saveUsers();
     if (this.currentUserId === id) {
       this.currentUserId = this.users[0].id;
@@ -768,10 +772,36 @@ class PrefsStore {
       display: { showGround: true, showWireframe: false, showReticle: true, showCompare: false },
       model: { currentModelFile: 'model.glb' },
     };
+    // 初始化时读 last-saved 标记（如果有）
+    this._refreshLastSavedFromStorage();
   }
 
   _key(userId) {
     return 'sketch-ref-prefs-' + userId;
+  }
+  _lastSavedKey(userId) {
+    return 'sketch-ref-prefs-' + userId + '-last-saved';
+  }
+
+  _refreshLastSavedFromStorage() {
+    const user = this.userManager.getCurrent();
+    if (!user) return;
+    const raw = localStorage.getItem(this._lastSavedKey(user.id));
+    const ts = raw ? parseInt(raw, 10) : null;
+    this._renderLastSavedUI(ts);
+  }
+
+  _renderLastSavedUI(ts) {
+    const el = document.getElementById('um-prefs-saved');
+    if (!el) return;
+    if (!ts || isNaN(ts)) {
+      el.textContent = '上次保存 —';
+      return;
+    }
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    el.textContent = '上次保存 ' + hh + ':' + mm;
   }
 
   load() {
@@ -792,7 +822,14 @@ class PrefsStore {
   save(prefs) {
     const user = this.userManager.getCurrent();
     if (!user) return;
-    localStorage.setItem(this._key(user.id), JSON.stringify(prefs));
+    try {
+      localStorage.setItem(this._key(user.id), JSON.stringify(prefs));
+      const now = Date.now();
+      localStorage.setItem(this._lastSavedKey(user.id), String(now));
+      this._renderLastSavedUI(now);
+    } catch (e) {
+      console.warn('[PrefsStore] save failed:', e);
+    }
   }
 
   updatePath(path, value) {
@@ -809,6 +846,55 @@ class PrefsStore {
 const prefsStore = new PrefsStore(userManager);
 
 // ============ 新增模块: 画板 ============
+
+// 共用笔触渲染器（v1.1: SketchCanvas / AnnotationLayer / 历史查看器共用）
+const StrokeRenderer = {
+  renderTo(ctx, strokes, w, h) {
+    const draw = (stroke) => {
+      if (!stroke || !stroke.points || stroke.points.length < 1) return;
+      ctx.strokeStyle = stroke.color;
+      ctx.globalAlpha = stroke.opacity != null ? stroke.opacity : 1;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // 圆形：用 stroke 的 rect 字段画椭圆描边
+      if (stroke.type === 'circle' && stroke.rect) {
+        const r = stroke.rect;
+        ctx.lineWidth = stroke.baseWidth || 2;
+        ctx.beginPath();
+        ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.abs(r.w / 2), Math.abs(r.h / 2), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        return;
+      }
+      if (stroke.points.length === 1) {
+        const p = stroke.points[0];
+        const w0 = stroke.baseWidth * (0.3 + 0.7 * Math.pow(p.pressure || 0.5, 0.6));
+        ctx.fillStyle = stroke.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, w0 / 2, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      // 用二次贝塞尔平滑
+      for (let i = 1; i < stroke.points.length - 1; i++) {
+        const p1 = stroke.points[i];
+        const p2 = stroke.points[i + 1];
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        const w = stroke.baseWidth * (0.3 + 0.7 * Math.pow(((p1.pressure || 0.5) + (p2.pressure || 0.5)) / 2, 0.6));
+        ctx.lineWidth = w;
+        ctx.quadraticCurveTo(p1.x, p1.y, mx, my);
+      }
+      const last = stroke.points[stroke.points.length - 1];
+      ctx.lineTo(last.x, last.y);
+      ctx.stroke();
+    };
+    strokes.forEach(draw);
+    ctx.globalAlpha = 1;
+  },
+};
+
 class SketchCanvas {
   constructor(canvas, container) {
     this.canvas = canvas;
@@ -847,6 +933,8 @@ class SketchCanvas {
 
     const start = (e) => {
       if (this.mode !== 'sketch') return;
+      // 批注模式激活时，画板交出指针事件给批注 canvas
+      if (document.body.classList.contains('ann-active')) return;
       e.preventDefault();
       const pos = getPos(e);
       const pressure = (e.pressure !== undefined && e.pressure > 0 && e.pressure <= 1) ? e.pressure : 0.5;
@@ -944,44 +1032,14 @@ class SketchCanvas {
   _render() {
     const r = this.canvas.getBoundingClientRect();
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this._renderTo(this.ctx, r.width, r.height);
+    const all = this.currentStroke ? this.strokes.concat([this.currentStroke]) : this.strokes;
+    StrokeRenderer.renderTo(this.ctx, all, r.width, r.height);
   }
 
   _renderTo(ctx, w, h) {
-    const draw = (stroke) => {
-      if (stroke.points.length < 1) return;
-      ctx.strokeStyle = stroke.color;
-      ctx.globalAlpha = stroke.opacity;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      if (stroke.points.length === 1) {
-        const p = stroke.points[0];
-        const w0 = stroke.baseWidth * (0.3 + 0.7 * Math.pow(p.pressure, 0.6));
-        ctx.fillStyle = stroke.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, w0/2, 0, Math.PI * 2);
-        ctx.fill();
-        return;
-      }
-      ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      // 用二次贝塞尔平滑
-      for (let i = 1; i < stroke.points.length - 1; i++) {
-        const p1 = stroke.points[i];
-        const p2 = stroke.points[i+1];
-        const mx = (p1.x + p2.x) / 2;
-        const my = (p1.y + p2.y) / 2;
-        const w = stroke.baseWidth * (0.3 + 0.7 * Math.pow((p1.pressure + p2.pressure)/2, 0.6));
-        ctx.lineWidth = w;
-        ctx.quadraticCurveTo(p1.x, p1.y, mx, my);
-      }
-      const last = stroke.points[stroke.points.length - 1];
-      ctx.lineTo(last.x, last.y);
-      ctx.stroke();
-    };
-    this.strokes.forEach(draw);
-    if (this.currentStroke) draw(this.currentStroke);
-    ctx.globalAlpha = 1;
+    // 兼容旧调用（ExportService 内部会用到 offscreen canvas）
+    const all = this.currentStroke ? this.strokes.concat([this.currentStroke]) : this.strokes;
+    StrokeRenderer.renderTo(ctx, all, w, h);
   }
 }
 
@@ -990,6 +1048,940 @@ class SketchCanvas {
 
 const sketchCanvasEl = document.getElementById('sketch-canvas');
 const sketchCanvas = new SketchCanvas(sketchCanvasEl, canvasContainer);
+
+// ============ v1.1: 批注图层（独立于画板，红色笔 / 红色圆圈） ============
+class AnnotationLayer {
+  constructor(canvas, container) {
+    this.canvas = canvas;
+    this.container = container;
+    this.ctx = canvas.getContext('2d');
+    this.strokes = [];
+    this.undoStack = [];
+    this.currentStroke = null;
+    this.enabled = false; // 是否处于批注模式（打开开关后为 true）
+    this.shape = 'pen'; // 'pen' | 'circle'
+    this.color = '#d4604f';
+    this.lineWidth = 3;
+    this.opacity = 0.95;
+    this.readOnly = false;
+    this.dpr = window.devicePixelRatio || 1;
+    this._resize();
+    this._bindEvents();
+    this._render();
+  }
+
+  _resize() {
+    const r = this.container.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    this.canvas.width = r.width * this.dpr;
+    this.canvas.height = r.height * this.dpr;
+    this.canvas.style.width = r.width + 'px';
+    this.canvas.style.height = r.height + 'px';
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+  }
+
+  setEnabled(on) {
+    this.enabled = !!on;
+    document.body.classList.toggle('ann-active', this.enabled && !this.readOnly);
+    const badge = document.getElementById('ann-badge');
+    if (badge) badge.style.display = this.enabled ? 'inline-block' : 'none';
+    const tgl = document.getElementById('ann-toggle');
+    if (tgl) tgl.checked = this.enabled;
+    this._render();
+  }
+
+  setShape(shape) {
+    this.shape = shape;
+    document.getElementById('ann-shape-pen')?.classList.toggle('active', shape === 'pen');
+    document.getElementById('ann-shape-circle')?.classList.toggle('active', shape === 'circle');
+  }
+
+  setLineWidth(w) {
+    this.lineWidth = w;
+    const el = document.getElementById('ann-line-width-val');
+    if (el) el.textContent = w + ' px';
+  }
+
+  undo() {
+    if (this.strokes.length === 0) return;
+    const s = this.strokes.pop();
+    this.undoStack.push(s);
+    this._render();
+  }
+
+  clear() {
+    if (this.strokes.length === 0 && this.undoStack.length === 0) return;
+    if (this.readOnly) { this.undoStack = []; this.strokes = []; this._render(); return; }
+    this.undoStack.push(...this.strokes);
+    this.strokes = [];
+    this._render();
+  }
+
+  exportStrokes() {
+    // 深拷贝，避免外部修改影响内部状态
+    return JSON.parse(JSON.stringify(this.strokes));
+  }
+
+  importStrokes(strokes, { readOnly = false } = {}) {
+    this.strokes = Array.isArray(strokes) ? strokes.map(s => JSON.parse(JSON.stringify(s))) : [];
+    this.undoStack = [];
+    this.readOnly = !!readOnly;
+    document.body.classList.toggle('ann-active', this.enabled && !this.readOnly);
+    this._render();
+  }
+
+  _render() {
+    const r = this.canvas.getBoundingClientRect();
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const all = this.currentStroke ? this.strokes.concat([this.currentStroke]) : this.strokes;
+    StrokeRenderer.renderTo(this.ctx, all, r.width, r.height);
+  }
+
+  _bindEvents() {
+    const getPos = (e) => {
+      const r = this.canvas.getBoundingClientRect();
+      const x = (e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0)) - r.left;
+      const y = (e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0)) - r.top;
+      return { x, y };
+    };
+
+    const start = (e) => {
+      if (!this.enabled || this.readOnly) return;
+      const pos = getPos(e);
+      e.preventDefault();
+      if (this.shape === 'circle') {
+        this.currentStroke = {
+          type: 'circle',
+          color: this.color,
+          baseWidth: this.lineWidth,
+          opacity: this.opacity,
+          rect: { x: pos.x, y: pos.y, w: 0, h: 0 },
+        };
+      } else {
+        const pressure = (e.pressure !== undefined && e.pressure > 0 && e.pressure <= 1) ? e.pressure : 0.5;
+        this.currentStroke = {
+          color: this.color,
+          baseWidth: this.lineWidth,
+          opacity: this.opacity,
+          points: [{ x: pos.x, y: pos.y, pressure }],
+        };
+      }
+      this.canvas.setPointerCapture && e.pointerId !== undefined && this.canvas.setPointerCapture(e.pointerId);
+    };
+
+    const move = (e) => {
+      if (!this.currentStroke) return;
+      e.preventDefault();
+      const pos = getPos(e);
+      if (this.currentStroke.type === 'circle') {
+        const start = this.currentStroke.rect;
+        this.currentStroke.rect = { x: start.x, y: start.y, w: pos.x - start.x, h: pos.y - start.y };
+      } else {
+        const pressure = (e.pressure !== undefined && e.pressure > 0 && e.pressure <= 1) ? e.pressure : 0.5;
+        this.currentStroke.points.push({ x: pos.x, y: pos.y, pressure });
+      }
+      this._render();
+    };
+
+    const end = (e) => {
+      if (!this.currentStroke) return;
+      // 圆形：宽高过小视为点击，不入库
+      if (this.currentStroke.type === 'circle') {
+        const r = this.currentStroke.rect;
+        if (Math.abs(r.w) >= 4 && Math.abs(r.h) >= 4) {
+          this.strokes.push(this.currentStroke);
+          this.undoStack = [];
+        }
+      } else {
+        if (this.currentStroke.points.length >= 2) {
+          this.strokes.push(this.currentStroke);
+          this.undoStack = [];
+        }
+      }
+      this.currentStroke = null;
+      this._render();
+    };
+
+    this.canvas.addEventListener('pointerdown', start);
+    this.canvas.addEventListener('pointermove', move);
+    this.canvas.addEventListener('pointerup', end);
+    this.canvas.addEventListener('pointercancel', end);
+    this.canvas.addEventListener('pointerleave', end);
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => this._resize()).observe(this.container);
+    }
+  }
+}
+
+const annotationCanvasEl = document.getElementById('annotation-canvas');
+const annotationLayer = new AnnotationLayer(annotationCanvasEl, canvasContainer);
+
+// ============ v1.1: 计时器状态机 ============
+const POMODORO_WORK_MS = 25 * 60 * 1000;
+const POMODORO_BREAK_MS = 5 * 60 * 1000;
+const EXAM_MS = 3 * 60 * 60 * 1000;
+
+class TimerStore {
+  constructor(userManager) {
+    this.userManager = userManager;
+    this.mode = 'pomodoro';
+    this.state = 'idle'; // idle | running | paused | finished
+    this.durationMs = POMODORO_WORK_MS;
+    this.remainingMs = POMODORO_WORK_MS;
+    this.cycle = 1; // pomodoro: odd=work, even=break
+    this.sessionStartedAt = null;
+    this.finishedAt = null;
+    this.lastTickAt = Date.now();
+    this.listeners = { tick: [], state: [], finish: [] };
+    this._persistHandle = null;
+    this._rafId = null;
+    this._loop = this._loop.bind(this);
+    this._lastPersist = 0;
+    this.load();
+    this._renderUI();
+    // 仅当 reload 时检测到 running 状态才启动 loop
+    if (this.state === 'running') this._startLoop();
+  }
+
+  on(event, cb) {
+    if (this.listeners[event]) this.listeners[event].push(cb);
+  }
+  _emit(event, payload) {
+    (this.listeners[event] || []).forEach(cb => {
+      try { cb(payload); } catch (e) { console.warn('[TimerStore]', event, e); }
+    });
+  }
+
+  _key(userId) { return 'sketch-ref-timer-' + userId; }
+
+  load() {
+    const user = this.userManager.getCurrent();
+    if (!user) return;
+    try {
+      const raw = localStorage.getItem(this._key(user.id));
+      if (!raw) { this._resetForMode(true); return; }
+      const s = JSON.parse(raw);
+      if (!s || s.schemaVersion !== 1) { this._resetForMode(true); return; }
+      this.mode = s.mode || 'pomodoro';
+      this.state = s.state || 'idle';
+      this.durationMs = s.durationMs || this._durationForMode(this.mode, s.cycle || 1);
+      this.remainingMs = s.remainingMs != null ? s.remainingMs : this.durationMs;
+      this.cycle = s.cycle || 1;
+      this.sessionStartedAt = s.sessionStartedAt || null;
+      this.finishedAt = s.finishedAt || null;
+      this.lastTickAt = s.lastTickAt || Date.now();
+
+      // 补偿刷新漂移
+      if (this.state === 'running') {
+        const now = Date.now();
+        const elapsed = now - this.lastTickAt;
+        if (elapsed > 0) {
+          this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+          this.lastTickAt = now;
+          if (this.remainingMs <= 0) {
+            this.state = 'finished';
+            this.finishedAt = now;
+            // 异步触发 finish（historyStore 可能尚未实例化）
+            setTimeout(() => this._emit('finish', this.snapshotSession('auto')), 0);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[TimerStore] load failed:', e);
+      this._resetForMode(true);
+    }
+    this._renderUI();
+  }
+
+  save() {
+    const user = this.userManager.getCurrent();
+    if (!user) return;
+    const payload = {
+      schemaVersion: 1,
+      mode: this.mode,
+      state: this.state,
+      durationMs: this.durationMs,
+      remainingMs: this.remainingMs,
+      cycle: this.cycle,
+      sessionStartedAt: this.sessionStartedAt,
+      finishedAt: this.finishedAt,
+      lastTickAt: this.lastTickAt,
+    };
+    try { localStorage.setItem(this._key(user.id), JSON.stringify(payload)); } catch (e) {}
+  }
+
+  _durationForMode(mode, cycle) {
+    if (mode === 'pomodoro') return cycle % 2 === 1 ? POMODORO_WORK_MS : POMODORO_BREAK_MS;
+    if (mode === 'exam') return EXAM_MS;
+    return 0; // free 模式无固定时长
+  }
+
+  _resetForMode(silent = false) {
+    this.cycle = 1;
+    this.durationMs = this._durationForMode(this.mode, this.cycle);
+    this.remainingMs = this.mode === 'free' ? 0 : this.durationMs;
+    this.state = 'idle';
+    this.sessionStartedAt = null;
+    this.finishedAt = null;
+    this.lastTickAt = Date.now();
+    this.save();
+    if (!silent) this._emit('state', this.getState());
+    this._renderUI();
+  }
+
+  setMode(mode) {
+    if (!['pomodoro', 'free', 'exam'].includes(mode)) return;
+    if (this.state === 'running') {
+      if (!confirm('计时进行中，切换模式将重置当前计时，确定？')) return;
+    }
+    this.mode = mode;
+    this._resetForMode();
+  }
+
+  start() {
+    if (this.state === 'running') return;
+    if (this.state === 'finished') {
+      // finished 后再点 ▶：进入下一段（pomodoro work→break→work...）
+      if (this.mode === 'pomodoro') {
+        this.cycle += 1;
+        this.durationMs = this._durationForMode(this.mode, this.cycle);
+        this.remainingMs = this.durationMs;
+      } else {
+        this.remainingMs = this.mode === 'free' ? 0 : this.durationMs;
+      }
+    }
+    if (this.mode === 'free' && this.state === 'idle') {
+      // 自由计时：从 0 开始累计
+      this.durationMs = 0;
+      this.remainingMs = 0;
+    }
+    this.state = 'running';
+    if (this.sessionStartedAt == null) this.sessionStartedAt = Date.now();
+    this.lastTickAt = Date.now();
+    this.save();
+    this._emit('state', this.getState());
+    this._renderUI();
+    this._startLoop();
+  }
+
+  pause() {
+    if (this.state !== 'running') return;
+    this.state = 'paused';
+    this.lastTickAt = Date.now();
+    this.save();
+    this._emit('state', this.getState());
+    this._renderUI();
+    this._stopLoop();
+  }
+
+  toggle() {
+    if (this.state === 'running') this.pause();
+    else this.start();
+  }
+
+  reset() {
+    this._resetForMode();
+    showToast('已重置计时器', '');
+  }
+
+  // 返回一段"已完成 session"的快照（计时器/历史用）
+  snapshotSession(mode = 'manual') {
+    const user = this.userManager.getCurrent();
+    const elapsed = this.sessionStartedAt ? Date.now() - this.sessionStartedAt : 0;
+    return {
+      id: 'hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      createdAt: Date.now(),
+      durationMs: elapsed || this.durationMs,
+      mode: mode === 'auto' ? this.mode : mode,
+      userId: user ? user.id : null,
+    };
+  }
+
+  getState() {
+    return {
+      mode: this.mode,
+      state: this.state,
+      durationMs: this.durationMs,
+      remainingMs: this.remainingMs,
+      cycle: this.cycle,
+      sessionStartedAt: this.sessionStartedAt,
+    };
+  }
+
+  // 主循环：仅在 running 时跑；finished/idle 时不浪费 RAF（减低空闲时的 TBT）
+  _startLoop() {
+    if (this._rafId != null) return;
+    this._rafId = requestAnimationFrame(this._loop);
+  }
+  _stopLoop() {
+    if (this._rafId != null) { cancelAnimationFrame(this._rafId); this._rafId = null; }
+  }
+  _loop() {
+    this._rafId = null;
+    const now = Date.now();
+    if (this.state === 'running') {
+      const elapsed = now - this.lastTickAt;
+      if (elapsed > 0) {
+        this.remainingMs = Math.max(0, this.remainingMs - elapsed);
+        this.lastTickAt = now;
+        if (now - this._lastPersist > 5000) {
+          this.save();
+          this._lastPersist = now;
+        }
+        if (this.remainingMs <= 0) {
+          this.state = 'finished';
+          this.finishedAt = now;
+          this.save();
+          this._emit('finish', this.snapshotSession('auto'));
+          this._renderUI();
+          try { playChime(); } catch (e) {}
+        } else {
+          this._renderDisplay();
+          this._emit('tick', this.getState());
+        }
+      }
+    }
+    // 仅当仍 running 时继续下一帧
+    if (this.state === 'running') this._rafId = requestAnimationFrame(this._loop);
+  }
+
+  _formatMMSS(ms) {
+    if (ms < 0) ms = 0;
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  _renderDisplay() {
+    const el = document.getElementById('tw-display');
+    if (!el) return;
+    el.textContent = this._formatMMSS(this.remainingMs);
+  }
+
+  _renderUI() {
+    this._renderDisplay();
+    const labelEl = document.getElementById('tw-mode-label');
+    if (labelEl) {
+      const labels = { pomodoro: '番茄钟', free: '自由计时', exam: '考试模拟' };
+      labelEl.textContent = labels[this.mode] || this.mode;
+    }
+    document.querySelectorAll('[data-tw-mode]').forEach(b => {
+      b.classList.toggle('active', b.dataset.twMode === this.mode);
+    });
+    const widget = document.getElementById('timer-widget');
+    if (widget) {
+      widget.classList.toggle('running', this.state === 'running');
+      widget.classList.toggle('paused', this.state === 'paused');
+      widget.classList.toggle('finished', this.state === 'finished');
+    }
+    const playBtn = document.getElementById('tw-play');
+    if (playBtn) {
+      playBtn.textContent = this.state === 'running' ? '⏸ 暂停' : (this.state === 'finished' ? '▶ 下一段' : '▶ 开始');
+    }
+  }
+}
+
+function playChime() {
+  // 简单的 0.3s 蜂鸣，用 WebAudio 不引入新文件
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* 忽略音频失败 */ }
+}
+
+const timerStore = new TimerStore(userManager);
+
+// ============ v1.1: 导出服务（PNG / PDF） ============
+class ExportService {
+  constructor({ renderer, scene, camera, sketchCanvas, annotationLayer, timerStore }) {
+    this.renderer = renderer;
+    this.scene = scene;
+    this.camera = camera;
+    this.sketchCanvas = sketchCanvas;
+    this.annotationLayer = annotationLayer;
+    this.timerStore = timerStore;
+    this._jspdfModule = null;
+    this._jspdfFailed = false;
+  }
+
+  // 合成 PNG dataURL（3D + 画板 + 批注）
+  takeCompositePng({ includeAnnotation = true, quality = 0.85, type = 'image/jpeg' } = {}) {
+    if (!this.renderer) return null;
+    this.renderer.render(this.scene, this.camera);
+    const composite = document.createElement('canvas');
+    composite.width = this.renderer.domElement.width;
+    composite.height = this.renderer.domElement.height;
+    const ctx = composite.getContext('2d');
+    // 1. 3D
+    ctx.drawImage(this.renderer.domElement, 0, 0);
+    // 2. 画板
+    if (this.sketchCanvas && this.sketchCanvas.strokes.length > 0) {
+      ctx.globalAlpha = this.sketchCanvas.opacity;
+      ctx.drawImage(this.sketchCanvas.canvas, 0, 0, composite.width, composite.height);
+      ctx.globalAlpha = 1;
+    }
+    // 3. 批注（在画板之上，独立 layer）
+    if (includeAnnotation && this.annotationLayer && this.annotationLayer.strokes.length > 0) {
+      // 把批注渲染到 offscreen，再叠
+      const off = document.createElement('canvas');
+      const r = this.annotationLayer.canvas.getBoundingClientRect();
+      off.width = r.width * (this.annotationLayer.dpr || 1);
+      off.height = r.height * (this.annotationLayer.dpr || 1);
+      const offCtx = off.getContext('2d');
+      offCtx.scale(this.annotationLayer.dpr || 1, this.annotationLayer.dpr || 1);
+      StrokeRenderer.renderTo(offCtx, this.annotationLayer.strokes, r.width, r.height);
+      ctx.drawImage(off, 0, 0, composite.width, composite.height);
+    }
+    return composite.toDataURL(type, quality);
+  }
+
+  exportPng() {
+    const dataUrl = this.takeCompositePng({ type: 'image/png' });
+    if (!dataUrl) { showToast('3D 未就绪', 'error'); return; }
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.download = 'sketch-' + ts + '.png';
+    a.href = dataUrl;
+    a.click();
+    showToast('已保存 PNG（含批注）', 'success');
+  }
+
+  async _getJsPdf() {
+    if (this._jspdfModule) return this._jspdfModule;
+    if (this._jspdfFailed) return null;
+    try {
+      this._jspdfModule = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm');
+      return this._jspdfModule;
+    } catch (e) {
+      this._jspdfFailed = true;
+      console.warn('[ExportService] jsPDF 加载失败', e);
+      return null;
+    }
+  }
+
+  async exportPdf({ caption = null } = {}) {
+    const mod = await this._getJsPdf();
+    if (!mod) {
+      showToast('PDF 导出需要联网（jsPDF CDN 不可达）', 'error');
+      return;
+    }
+    const dataUrl = this.takeCompositePng({ type: 'image/jpeg', quality: 0.85 });
+    if (!dataUrl) { showToast('3D 未就绪', 'error'); return; }
+    const { jsPDF } = mod;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+    const pageW = 297, pageH = 210;
+    const margin = 12;
+    const imgW = pageW - margin * 2;
+    const imgH = imgW * 9 / 16; // 16:9 宽屏
+    doc.addImage(dataUrl, 'JPEG', margin, margin, imgW, imgH);
+    // 底部 caption
+    const txt = caption || (() => {
+      const d = new Date();
+      const ts = d.toISOString().replace(/T/, ' ').slice(0, 19);
+      const timer = this.timerStore ? this.timerStore.getState() : null;
+      const modeLabel = timer ? ({ pomodoro: '番茄钟', free: '自由', exam: '考试' }[timer.mode] || timer.mode) : '';
+      return ts + (modeLabel ? ' · ' + modeLabel : '');
+    })();
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text(txt, margin, pageH - margin);
+    doc.save('sketch-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.pdf');
+    showToast('已保存 PDF（含批注）', 'success');
+  }
+}
+
+const exportService = new ExportService({
+  renderer, scene, camera,
+  sketchCanvas, annotationLayer, timerStore,
+});
+
+// ============ v1.1: 历史记录 ============
+class HistoryStore {
+  constructor(userManager, { cap = 50 } = {}) {
+    this.userManager = userManager;
+    this.cap = cap;
+    this.records = [];
+    this._loaded = false;
+    this._listeners = [];
+    this.load();
+  }
+
+  on(cb) { this._listeners.push(cb); }
+  _emit() { this._listeners.forEach(cb => { try { cb(); } catch (e) {} }); }
+
+  _key(userId) { return 'sketch-ref-history-' + userId; }
+
+  load() {
+    const user = this.userManager.getCurrent();
+    if (!user) { this.records = []; this._loaded = true; return; }
+    try {
+      const raw = localStorage.getItem(this._key(user.id));
+      this.records = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      console.warn('[HistoryStore] load failed', e);
+      this.records = [];
+    }
+    this._loaded = true;
+  }
+
+  _save() {
+    const user = this.userManager.getCurrent();
+    if (!user) return false;
+    try {
+      localStorage.setItem(this._key(user.id), JSON.stringify(this.records));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  list() {
+    return this.records.slice().sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getById(id) {
+    return this.records.find(r => r.id === id);
+  }
+
+  add(record) {
+    // record: 完整 HistoryRecord（已含 compositeJpegDataUrl 等）
+    this.records.unshift(record);
+    // LRU: 超过 cap 时弹掉最老的
+    while (this.records.length > this.cap) this.records.pop();
+    // 配额保护：失败 → 弹老 → 重试一次
+    if (!this._save()) {
+      this.records.pop();
+      while (this.records.length > this.cap - 5) this.records.pop();
+      if (!this._save()) {
+        showToast('存储已满，无法保存', 'error');
+        return false;
+      }
+    }
+    this._emit();
+    return true;
+  }
+
+  update(id, patch) {
+    const rec = this.records.find(r => r.id === id);
+    if (!rec) return false;
+    Object.assign(rec, patch);
+    const ok = this._save();
+    this._emit();
+    return ok;
+  }
+
+  remove(id) {
+    const before = this.records.length;
+    this.records = this.records.filter(r => r.id !== id);
+    if (this.records.length < before) {
+      this._save();
+      this._emit();
+      return true;
+    }
+    return false;
+  }
+
+  clear() {
+    this.records = [];
+    this._save();
+    this._emit();
+  }
+
+  // ===== 聚合器 =====
+  totalThisWeek() {
+    const now = new Date();
+    const day = (now.getDay() + 6) % 7; // 周一 = 0
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+    monday.setHours(0, 0, 0, 0);
+    return this.records
+      .filter(r => r.createdAt >= monday.getTime())
+      .reduce((sum, r) => sum + (r.durationMs || 0), 0);
+  }
+
+  modelsCovered() {
+    const map = new Map();
+    this.records.forEach(r => {
+      const f = r.modelParams && r.modelParams.modelFile ? r.modelParams.modelFile : '未知';
+      map.set(f, (map.get(f) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([modelFile, count]) => ({ modelFile, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  totals() {
+    let totalStrokes = 0;
+    this.records.forEach(r => {
+      if (Array.isArray(r.strokes)) totalStrokes += r.strokes.length;
+    });
+    return { totalStrokes, totalRecords: this.records.length };
+  }
+
+  currentStreakDays() {
+    if (this.records.length === 0) return 0;
+    // 把所有 createdAt 折算成 YYYY-MM-DD 集合
+    const days = new Set();
+    this.records.forEach(r => {
+      const d = new Date(r.createdAt);
+      days.add(d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate());
+    });
+    let streak = 0;
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+    // 从今天往前数；如果今天没有，看昨天有没有（避免凌晨练习被判 0）
+    if (!days.has(cursor.getFullYear() + '-' + cursor.getMonth() + '-' + cursor.getDate())) {
+      cursor.setDate(cursor.getDate() - 1);
+      if (!days.has(cursor.getFullYear() + '-' + cursor.getMonth() + '-' + cursor.getDate())) {
+        return 0;
+      }
+    }
+    while (days.has(cursor.getFullYear() + '-' + cursor.getMonth() + '-' + cursor.getDate())) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+}
+
+const historyStore = new HistoryStore(userManager);
+
+// ============ v1.1: 保存当前会话快照 ============
+function buildCurrentSnapshotBase(mode = 'manual') {
+  const ts = timerStore.snapshotSession(mode);
+  const user = userManager.getCurrent();
+  let view = null, light = null;
+  try {
+    view = (typeof view !== 'undefined' && view) ? { az: view.baseAz || 0, el: view.baseEl || 0, distance: view.baseDist || 1 } : null;
+  } catch (e) {}
+  try {
+    light = (typeof keyLight !== 'undefined' && keyLight) ? {
+      az: (typeof view !== 'undefined' && view) ? (view.baseAz || 0) : 0,
+      el: (typeof view !== 'undefined' && view) ? (view.baseEl || 0) : 0,
+      intensity: keyLight.intensity != null ? keyLight.intensity : 1,
+      ambient: (typeof ambient !== 'undefined' && ambient) ? ambient.intensity : 0.3,
+    } : null;
+  } catch (e) {}
+  return {
+    ...ts,
+    userId: user ? user.id : null,
+    strokes: sketchCanvas.strokes.map(s => JSON.parse(JSON.stringify(s))),
+    annotations: annotationLayer.strokes.map(s => JSON.parse(JSON.stringify(s))),
+    modelParams: {
+      modelFile: (typeof CONFIG !== 'undefined' && CONFIG.modelFile) || 'model.glb',
+      view: view || { az: 0, el: 0, distance: 1 },
+      light: light || { az: 0, el: 0, intensity: 1, ambient: 0.3 },
+    },
+    compositeJpegDataUrl: '',
+  };
+}
+
+function saveCurrentSnapshot(mode = 'manual') {
+  const rec = buildCurrentSnapshotBase(mode);
+  // 生成 composite（可能略慢，给个 toast）
+  showToast('正在保存…', '');
+  setTimeout(() => {
+    try {
+      rec.compositeJpegDataUrl = exportService.takeCompositePng({ type: 'image/jpeg', quality: 0.85 });
+    } catch (e) {
+      console.warn('[saveCurrentSnapshot] composite failed', e);
+    }
+    const ok = historyStore.add(rec);
+    if (ok) {
+      showToast('已保存到历史记录', 'success');
+      // 重置计时器的 sessionStartedAt，让"下一次"重新计时
+      timerStore.sessionStartedAt = null;
+      timerStore._resetForMode(true);
+    }
+  }, 50);
+}
+
+// 自动快照：计时器归零时
+timerStore.on('finish', (session) => {
+  // 把 snapshot 的 mode 换成 timer 当前的 mode
+  saveCurrentSnapshot(session.mode || 'auto');
+});
+
+// ============ v1.1: 历史记录面板 ============
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '0 分钟';
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return min + ' 分钟';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h + ' 小时 ' + m + ' 分钟';
+}
+function fmtRelativeTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function modeLabel(mode) {
+  return ({ pomodoro: '番茄钟', free: '自由', exam: '考试', manual: '手动' }[mode] || mode);
+}
+
+function renderHistoryGrid() {
+  const grid = document.getElementById('history-grid');
+  const empty = document.getElementById('history-empty');
+  const count = document.getElementById('history-count');
+  if (!grid) return;
+  const records = historyStore.list();
+  grid.innerHTML = '';
+  count.textContent = records.length ? '（' + records.length + '）' : '';
+  if (records.length === 0) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  records.forEach(rec => {
+    const card = document.createElement('div');
+    card.className = 'history-thumb';
+    card.dataset.recId = rec.id;
+    if (rec.compositeJpegDataUrl) {
+      const img = document.createElement('img');
+      img.src = rec.compositeJpegDataUrl;
+      img.alt = '历史记录';
+      img.loading = 'lazy';
+      card.appendChild(img);
+    } else {
+      const e = document.createElement('div');
+      e.className = 'thumb-empty';
+      e.textContent = '（空白）';
+      card.appendChild(e);
+    }
+    const cap = document.createElement('div');
+    cap.className = 'thumb-caption';
+    cap.innerHTML = '<span>' + escapeHtml(fmtRelativeTime(rec.createdAt)) + '</span>' +
+                    '<span class="thumb-mode">' + escapeHtml(modeLabel(rec.mode)) + '</span>';
+    card.appendChild(cap);
+    card.addEventListener('click', () => openHistoryViewer(rec.id));
+    grid.appendChild(card);
+  });
+}
+
+function openHistoryPanel() {
+  renderHistoryGrid();
+  document.getElementById('history-panel').classList.add('visible');
+}
+function closeHistoryPanel() {
+  document.getElementById('history-panel').classList.remove('visible');
+  closeHistoryViewer();
+}
+document.getElementById('close-history').addEventListener('click', closeHistoryPanel);
+
+// ============ v1.1: 历史查看器 ============
+let currentViewingRecId = null;
+
+function openHistoryViewer(recId) {
+  const rec = historyStore.getById(recId);
+  if (!rec) return;
+  currentViewingRecId = recId;
+  const viewer = document.getElementById('history-viewer');
+  const img = document.getElementById('mv-img');
+  const meta = document.getElementById('mv-meta');
+  const title = document.getElementById('mv-title');
+  title.textContent = modeLabel(rec.mode) + ' · ' + fmtRelativeTime(rec.createdAt);
+  img.src = rec.compositeJpegDataUrl || '';
+  img.style.display = rec.compositeJpegDataUrl ? 'block' : 'none';
+  const dur = fmtDuration(rec.durationMs);
+  const model = rec.modelParams && rec.modelParams.modelFile ? rec.modelParams.modelFile.split('/').pop() : '?';
+  meta.innerHTML =
+    '<span>📅 ' + new Date(rec.createdAt).toLocaleString('zh-CN') + '</span>' +
+    '<span>⏱ 时长 ' + dur + '</span>' +
+    '<span>🎨 模型 ' + escapeHtml(model) + '</span>' +
+    '<span>✏️ 批注 ' + (rec.annotations ? rec.annotations.length : 0) + ' 个</span>';
+  viewer.classList.add('visible');
+}
+
+function closeHistoryViewer() {
+  document.getElementById('history-viewer').classList.remove('visible');
+  currentViewingRecId = null;
+}
+document.getElementById('mv-close').addEventListener('click', closeHistoryViewer);
+
+document.getElementById('mv-delete').addEventListener('click', () => {
+  if (!currentViewingRecId) return;
+  if (!confirm('删除这条历史记录？')) return;
+  historyStore.remove(currentViewingRecId);
+  closeHistoryViewer();
+  renderHistoryGrid();
+  showToast('已删除', 'success');
+});
+
+document.getElementById('mv-export-pdf').addEventListener('click', async () => {
+  const rec = currentViewingRecId ? historyStore.getById(currentViewingRecId) : null;
+  if (!rec) return;
+  const caption = new Date(rec.createdAt).toLocaleString('zh-CN') + ' · ' + modeLabel(rec.mode) + ' · ' + fmtDuration(rec.durationMs);
+  await exportService.exportPdf({ caption });
+});
+
+document.getElementById('mv-edit-ann').addEventListener('click', () => {
+  const rec = currentViewingRecId ? historyStore.getById(currentViewingRecId) : null;
+  if (!rec) return;
+  // 载入批注到当前画板批注层（开启批注模式）
+  annotationLayer.importStrokes(rec.annotations || [], { readOnly: false });
+  annotationLayer.setEnabled(true);
+  closeHistoryViewer();
+  closeHistoryPanel();
+  showToast('批注已载入，开始编辑。完成后点"保存本次"会写入新历史记录', '');
+});
+
+// ============ v1.1: 进度看板 ============
+function renderDashboard() {
+  const recs = historyStore.list();
+  document.getElementById('dash-week').textContent = fmtDuration(historyStore.totalThisWeek());
+  const totals = historyStore.totals();
+  document.getElementById('dash-totals').textContent = totals.totalStrokes + ' / ' + totals.totalRecords;
+  document.getElementById('dash-streak').textContent = historyStore.currentStreakDays() + ' 天';
+  const list = document.getElementById('dash-models');
+  const models = historyStore.modelsCovered();
+  list.innerHTML = '';
+  if (models.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'dash-empty';
+    li.textContent = '暂无记录';
+    list.appendChild(li);
+  } else {
+    models.forEach(m => {
+      const li = document.createElement('li');
+      const name = m.modelFile.split('/').pop();
+      li.innerHTML = '<span>' + escapeHtml(name) + '</span><span class="value">' + m.count + ' 次</span>';
+      list.appendChild(li);
+    });
+  }
+}
+
+function openDashboardPanel() {
+  renderDashboard();
+  document.getElementById('dashboard-panel').classList.add('visible');
+}
+function closeDashboardPanel() {
+  document.getElementById('dashboard-panel').classList.remove('visible');
+}
+document.getElementById('close-dashboard').addEventListener('click', closeDashboardPanel);
+
+// 历史 store 变更时，若面板打开则自动刷新
+historyStore.on(() => {
+  if (document.getElementById('history-panel').classList.contains('visible')) renderHistoryGrid();
+  if (document.getElementById('dashboard-panel').classList.contains('visible')) renderDashboard();
+});
 
 // ============ 加载偏好并应用到 UI ============
 function applyPrefsToUI(prefs) {
@@ -1646,6 +2638,10 @@ function switchUser(userId) {
     document.getElementById('user-menu').classList.remove('visible');
     return;
   }
+  // 计时器运行中 → 确认是否切换
+  if (typeof timerStore !== 'undefined' && timerStore.getState && timerStore.getState().state === 'running') {
+    if (!confirm('当前计时未结束，是否切换用户并停止？')) return;
+  }
   // 保存当前用户的画板
   // (简化：当前画板不持久化，因为还没做完)
   userManager.setCurrent(userId);
@@ -1654,6 +2650,11 @@ function switchUser(userId) {
   // 重新加载 prefs 并刷新 UI
   const newPrefs = prefsStore.load();
   applyPrefsToUI(newPrefs);
+  // 重置批注层（用户数据隔离）
+  if (typeof annotationLayer !== 'undefined') annotationLayer.importStrokes([], { readOnly: false });
+  // 计时器重新载入（如果新用户有状态就续上）
+  if (typeof timerStore !== 'undefined') timerStore.load();
+  if (typeof prefsStore !== 'undefined') prefsStore._refreshLastSavedFromStorage();
   updateAvatarUI();
 }
 
@@ -1701,6 +2702,87 @@ document.getElementById('um-export').addEventListener('click', () => {
   a.href = URL.createObjectURL(blob);
   a.click();
   showToast('已导出 ' + data.user.displayName + ' 的数据', 'success');
+});
+
+// v1.1: 手动"保存偏好"按钮
+document.getElementById('um-save-prefs').addEventListener('click', () => {
+  prefsStore.save(prefsStore.load());
+  showToast('偏好已保存', 'success');
+  document.getElementById('user-menu').classList.remove('visible');
+});
+
+// v1.1: 导入数据（接 #um-import → 触发隐藏 file input → 读 JSON → 合并到 UserManager）
+document.getElementById('um-import').addEventListener('click', () => {
+  document.getElementById('um-import-file').click();
+});
+document.getElementById('um-import-file').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const data = JSON.parse(evt.target.result);
+      if (!data || data.type !== 'sketch-ref-user-export') {
+        showToast('文件格式不对（应是 sketch-ref-user-export 导出）', 'error');
+        return;
+      }
+      // 合并：用户不存在则新建；存在则更新显示名 / 头像色
+      const incoming = data.user;
+      if (!incoming || !incoming.id) {
+        showToast('文件中缺少用户数据', 'error');
+        return;
+      }
+      let target = userManager.list().find(u => u.id === incoming.id);
+      if (!target) {
+        // 复用 _createUser 保持 schema 一致，再覆盖关键字段
+        target = userManager._createUser(incoming.displayName || '导入用户');
+        target.id = incoming.id; // 保持 ID 一致 → 偏好键一致
+        target.avatarChar = incoming.avatarChar || target.avatarChar;
+        target.avatarColor = incoming.avatarColor || target.avatarColor;
+        target.isOwner = !!incoming.isOwner;
+        target.createdAt = incoming.createdAt || target.createdAt;
+        userManager.users.push(target);
+      } else {
+        target.displayName = incoming.displayName || target.displayName;
+        target.avatarChar = incoming.avatarChar || target.avatarChar;
+        target.avatarColor = incoming.avatarColor || target.avatarColor;
+      }
+      userManager._saveUsers();
+      // 写 prefs
+      if (data.prefs && target.id) {
+        try { localStorage.setItem('sketch-ref-prefs-' + target.id, JSON.stringify(data.prefs)); } catch (e) {}
+      }
+      // 切到导入的用户
+      userManager.setCurrent(target.id);
+      showToast('已导入「' + target.displayName + '」并切换', 'success');
+      document.getElementById('user-menu').classList.remove('visible');
+      applyPrefsToUI(prefsStore.load());
+      updateAvatarUI();
+    } catch (err) {
+      showToast('导入失败：' + err.message, 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+});
+
+// v1.1: 用户菜单 → 历史记录 / 进度看板
+document.getElementById('um-open-history').addEventListener('click', () => {
+  document.getElementById('user-menu').classList.remove('visible');
+  if (typeof openHistoryPanel === 'function') openHistoryPanel();
+});
+document.getElementById('um-open-dashboard').addEventListener('click', () => {
+  document.getElementById('user-menu').classList.remove('visible');
+  if (typeof openDashboardPanel === 'function') openDashboardPanel();
+});
+
+// v1.1: 顶栏 → 历史 / 进度
+document.getElementById('history-btn').addEventListener('click', () => {
+  if (typeof openHistoryPanel === 'function') openHistoryPanel();
+});
+document.getElementById('dashboard-btn').addEventListener('click', () => {
+  if (typeof openDashboardPanel === 'function') openDashboardPanel();
 });
 
 
@@ -1825,6 +2907,47 @@ document.getElementById('sketch-clear').addEventListener('click', () => {
   if (sketchCanvas.strokes.length > 0 && confirm('清空画板？')) sketchCanvas.clear();
 });
 
+// ============ v1.1: 批注工具栏 ============
+document.getElementById('ann-toggle').addEventListener('change', (e) => {
+  annotationLayer.setEnabled(e.target.checked);
+  if (e.target.checked) {
+    showToast('批注模式 · 红色笔/圆圈', 'success');
+    if (sketchCanvas.mode !== 'view') {
+      // 切到 view 避免画板笔触干扰
+      document.getElementById('mode-view').click();
+    }
+  }
+});
+document.getElementById('ann-shape-pen').addEventListener('click', () => annotationLayer.setShape('pen'));
+document.getElementById('ann-shape-circle').addEventListener('click', () => annotationLayer.setShape('circle'));
+document.getElementById('ann-line-width').addEventListener('input', (e) => {
+  annotationLayer.setLineWidth(parseInt(e.target.value, 10));
+});
+document.getElementById('ann-undo').addEventListener('click', () => annotationLayer.undo());
+document.getElementById('ann-clear').addEventListener('click', () => {
+  if (annotationLayer.strokes.length > 0 && confirm('清空批注？')) annotationLayer.clear();
+});
+
+// ============ v1.1: 计时器控件 ============
+document.getElementById('tw-toggle').addEventListener('click', () => {
+  document.getElementById('timer-widget').classList.toggle('collapsed');
+});
+document.querySelectorAll('[data-tw-mode]').forEach(btn => {
+  btn.addEventListener('click', () => timerStore.setMode(btn.dataset.twMode));
+});
+document.getElementById('tw-play').addEventListener('click', () => timerStore.toggle());
+document.getElementById('tw-reset').addEventListener('click', () => timerStore.reset());
+// "保存本次" / "导出 PNG/PDF" 在 Phase 5/6 后接线（依赖 historyStore / exportService）
+document.getElementById('tw-save-snapshot').addEventListener('click', () => {
+  if (typeof saveCurrentSnapshot === 'function') saveCurrentSnapshot('manual');
+});
+document.getElementById('tw-export-png').addEventListener('click', () => {
+  if (typeof exportService !== 'undefined') exportService.exportPng();
+});
+document.getElementById('tw-export-pdf').addEventListener('click', () => {
+  if (typeof exportService !== 'undefined') exportService.exportPdf();
+});
+
 // 截图（含画板）—— 合成 3D canvas + sketch canvas
 document.getElementById('screenshot-with-sketch').addEventListener('click', () => {
   if (!renderer) { showToast('3D 未就绪', 'error'); return; }
@@ -1886,7 +3009,13 @@ document.querySelectorAll('[data-light-preset]').forEach(btn => {
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const k = e.key.toLowerCase();
-  if (k === 'b') {
+  if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // v1.1: 计时器播放/暂停
+    if (typeof timerStore !== 'undefined') {
+      timerStore.toggle();
+      e.preventDefault();
+    }
+  } else if (k === 'b') {
     const isSketch = sketchCanvas.mode === 'sketch';
     document.getElementById(isSketch ? 'mode-view' : 'mode-sketch').click();
     e.preventDefault();

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-09T09:33:29.726Z",
+  "timestamp": "2026-09-10T03:42:56.341Z",
   "url": "http://127.0.0.1:8000/",
   "results": {
     "P7": {
@@ -12,28 +12,28 @@
     "P8": {
       "name": "Lighthouse Performance",
       "target": "≥ 80",
-      "actual": 59,
+      "actual": 65,
       "unit": "score",
       "passed": false
     },
     "P1-lh": {
       "name": "Lighthouse FCP",
       "target": "≤ 1.5s",
-      "actual": 4013,
+      "actual": 2813,
       "unit": "ms",
       "passed": false
     },
     "P1-lh-lcp": {
       "name": "Lighthouse LCP",
       "target": "≤ 2.5s",
-      "actual": 8403,
+      "actual": 7502,
       "unit": "ms",
       "passed": false
     },
     "P1-lh-tbt": {
       "name": "Lighthouse TBT",
       "target": "≤ 200ms",
-      "actual": 301,
+      "actual": 263,
       "unit": "ms",
       "passed": false
     }

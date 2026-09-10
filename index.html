@@ -31,6 +31,8 @@
       <button id="upload-model-header" class="upload-btn" title="选择 / 更换 GLB 模型">
         <span class="icon">📤</span><span class="label">上传模型</span>
       </button>
+      <button id="history-btn" class="upload-btn secondary" title="历史记录" aria-label="历史记录">📚</button>
+      <button id="dashboard-btn" class="upload-btn secondary" title="进度看板" aria-label="进度看板">📊</button>
       <div class="header-avatar" id="user-avatar-btn" title="切换用户">张</div>
     </div>
   </header>
@@ -51,9 +53,16 @@
     <div>新建用户</div>
   </div>
   <div class="um-divider"></div>
+  <div class="um-label">偏好</div>
+  <div class="um-item" id="um-save-prefs"><span class="icon">💾</span><span>保存偏好</span></div>
+  <div class="um-sub" id="um-prefs-saved">上次保存 —</div>
+  <div class="um-divider"></div>
   <div class="um-label">数据管理</div>
+  <div class="um-item" id="um-open-history"><span class="icon">📚</span><span>历史记录</span></div>
+  <div class="um-item" id="um-open-dashboard"><span class="icon">📊</span><span>进度看板</span></div>
   <div class="um-item" id="um-export"><span class="icon">📤</span><span>导出我的数据（JSON）</span></div>
   <div class="um-item" id="um-import"><span class="icon">📥</span><span>导入数据</span></div>
+  <input type="file" id="um-import-file" accept=".json,application/json" style="display:none">
   <div class="um-item danger" id="um-delete"><span class="icon">🗑</span><span>删除此用户</span></div>
 </div>
 
@@ -76,17 +85,48 @@
 <!-- 画板 Canvas（叠加在 3D 视图上） -->
 <canvas id="sketch-canvas"></canvas>
 
-<!-- 用户选择器（首次启动 / 冷启动） -->
-<div class="user-picker" id="user-picker">
+<!-- 批注 Canvas（在画板之上，默认 pointer-events:none） -->
+<canvas id="annotation-canvas"></canvas>
+
+<!-- 用户选择器（首次启动 / 冷启动）—— v1.1 移除：UserManager 已自动建默认用户，picker 标记无人接线 -->
+<!-- <div class="user-picker" id="user-picker">
   <div class="user-picker-inner">
     <h2>选择你的身份</h2>
     <div class="sub">每个用户的偏好、画板、模型缓存完全隔离</div>
     <div class="list" id="user-picker-list"></div>
   </div>
-</div>
+</div> -->
 
 <!-- Toast -->
 <div class="toast" id="toast"><div class="dot"></div><div id="toast-text"></div></div>
+
+<!-- 计时器浮窗（v1.1） -->
+<div id="timer-widget" class="timer-widget collapsed" aria-label="练习计时器">
+  <div class="tw-header">
+    <button id="tw-toggle" class="tw-icon" title="展开 / 收起">⏱</button>
+    <span id="tw-mode-label">番茄钟</span>
+    <span id="tw-display">25:00</span>
+  </div>
+  <div class="tw-body">
+    <div class="tw-modes btn-group" style="grid-template-columns:repeat(3,1fr)">
+      <button data-tw-mode="pomodoro" class="active">番茄钟</button>
+      <button data-tw-mode="free">自由</button>
+      <button data-tw-mode="exam">考试 3h</button>
+    </div>
+    <div class="tw-controls btn-group" style="grid-template-columns:1fr 1fr;margin-top:6px">
+      <button id="tw-play">▶ 开始</button>
+      <button id="tw-reset">↻ 重置</button>
+    </div>
+    <div class="tw-actions btn-group" style="grid-template-columns:1fr 1fr;margin-top:6px">
+      <button id="tw-save-snapshot" title="保存当前练习到历史">💾 保存本次</button>
+      <button id="tw-export-png" title="导出 PNG（含批注）">📷 PNG</button>
+    </div>
+    <div class="tw-actions btn-group" style="grid-template-columns:1fr;margin-top:6px">
+      <button id="tw-export-pdf" title="导出 PDF（含批注）">📄 PDF</button>
+    </div>
+    <div class="kbd-hint" style="color:#7a7a7a;margin-top:8px;font-size:10px;text-align:center">Space = 开始/暂停</div>
+  </div>
+</div>
 
   <div class="mobile-fab" aria-label="移动端快捷操作">
     <button id="upload-model-fab" class="fab" title="上传模型">📤</button>
@@ -237,6 +277,23 @@
       </div>
       <button id="screenshot-with-sketch" style="width:100%;margin-top:8px;background:var(--accent,#c89d5e);color:#1a1a1a;border-color:var(--accent,#c89d5e)">截图（含画板）</button>
     </section>
+
+    <section class="annotation-section">
+      <h2>批注图层 <span class="badge" id="ann-badge" style="font-size:10px;background:#d4604f;color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px;display:none">开启</span></h2>
+      <label class="toggle-row"><span>启用批注</span><input type="checkbox" id="ann-toggle" /></label>
+      <div class="label-row" style="margin-top:6px"><span>形状</span></div>
+      <div class="btn-group" style="grid-template-columns:1fr 1fr">
+        <button id="ann-shape-pen" class="active">红色画笔</button>
+        <button id="ann-shape-circle">红色圆圈</button>
+      </div>
+      <div class="label-row" style="margin-top:6px"><span>线宽</span><span class="value" id="ann-line-width-val">3 px</span></div>
+      <input type="range" id="ann-line-width" min="1" max="20" value="3" />
+      <div class="btn-group" style="grid-template-columns:1fr 1fr;margin-top:8px">
+        <button id="ann-undo" title="撤销">撤销</button>
+        <button id="ann-clear" title="清空批注">清空</button>
+      </div>
+      <div class="kbd-hint">批注为独立图层，截图与导出时与画板一起保存。</div>
+    </section>
 <section>
       <button id="load-from-disk">📁 加载其他 GLB 文件</button><button class="screenshot-btn" id="screenshot">📷 保存当前视角为 PNG</button>
     </section>
@@ -268,6 +325,63 @@
       <div class="compare-controls">
         <button id="compare-refresh" style="width:100%">🔄 刷新对比（捕捉当前画板）</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 历史记录面板（v1.1） -->
+  <div id="history-panel">
+    <div class="panel-header">
+      <span>历史记录 <span id="history-count" style="color:#8a8a8a;font-size:11px;font-weight:400"></span></span>
+      <button class="close-btn" id="close-history" title="关闭">×</button>
+    </div>
+    <div class="panel-body">
+      <div id="history-grid" class="thumb-grid"></div>
+      <div class="empty" id="history-empty">还没有记录。完成一次定时练习会自动保存。</div>
+    </div>
+  </div>
+
+  <!-- 历史记录详情查看器 -->
+  <div id="history-viewer" class="modal-viewer">
+    <div class="mv-card">
+      <div class="mv-header">
+        <span id="mv-title">记录详情</span>
+        <button class="mv-close" id="mv-close" title="关闭">×</button>
+      </div>
+      <div class="mv-image-wrap">
+        <img id="mv-img" alt="历史记录" />
+      </div>
+      <div class="mv-meta" id="mv-meta"></div>
+      <div class="mv-actions">
+        <button id="mv-edit-ann">✏️ 编辑批注</button>
+        <button id="mv-export-pdf">📄 导出 PDF</button>
+        <button id="mv-delete" class="danger">🗑 删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进度看板面板（v1.1） -->
+  <div id="dashboard-panel">
+    <div class="panel-header">
+      <span>进度看板</span>
+      <button class="close-btn" id="close-dashboard" title="关闭">×</button>
+    </div>
+    <div class="panel-body">
+      <section class="dash-section">
+        <h3>本周时长</h3>
+        <div class="dash-stat" id="dash-week">0 小时 0 分钟</div>
+      </section>
+      <section class="dash-section">
+        <h3>已覆盖模型</h3>
+        <ul class="dash-list" id="dash-models"><li class="dash-empty">暂无记录</li></ul>
+      </section>
+      <section class="dash-section">
+        <h3>总笔触 / 总记录</h3>
+        <div class="dash-stat" id="dash-totals">0 / 0</div>
+      </section>
+      <section class="dash-section">
+        <h3>连续练习天数</h3>
+        <div class="dash-stat" id="dash-streak">0 天</div>
+      </section>
     </div>
   </div>
 </div>

@@ -1,7 +1,7 @@
 // Service Worker for 素描临摹 3D 参考
 // Strategy: cache-first for shell (HTML/CSS/JS), network-first for GLB models
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = 'sketch-ref-shell-' + CACHE_VERSION;
 const RUNTIME_CACHE = 'sketch-ref-runtime-' + CACHE_VERSION;
 

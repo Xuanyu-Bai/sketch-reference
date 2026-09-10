@@ -1,34 +1,34 @@
 {
-  "timestamp": "2026-09-09T09:33:29.726Z",
+  "timestamp": "2026-09-10T03:42:56.341Z",
   "url": "http://127.0.0.1:8000/",
   "results": {
     "P6": {
       "name": "包体（不含模型）",
       "target": "≤ 5 MB",
-      "actual": 114371,
+      "actual": 120929,
       "unit": "bytes",
       "passed": true
     },
     "P1": {
       "name": "FCP 首屏内容渲染",
       "target": "≤ 1.5s",
-      "actual": 716,
+      "actual": 644,
       "unit": "ms",
       "passed": true
     },
     "P2": {
       "name": "模型切换（首次）",
       "target": "≤ 3s",
-      "actual": 78,
+      "actual": -1,
       "unit": "ms",
-      "passed": true
+      "passed": false
     },
     "P3": {
       "name": "模型切换（缓存命中）",
       "target": "≤ 0.5s",
-      "actual": 37,
+      "actual": -1,
       "unit": "ms",
-      "passed": true
+      "passed": false
     },
     "P4": {
       "name": "画板帧率（iPad）",
@@ -40,7 +40,7 @@
     "P5": {
       "name": "撤销 50 步总耗时",
       "target": "≤ 1s",
-      "actual": 55,
+      "actual": 23,
       "unit": "ms",
       "passed": true
     },
@@ -54,28 +54,28 @@
     "P8": {
       "name": "Lighthouse Performance",
       "target": "≥ 80",
-      "actual": 59,
+      "actual": 65,
       "unit": "score",
       "passed": false
     },
     "P1-lh": {
       "name": "Lighthouse FCP",
       "target": "≤ 1.5s",
-      "actual": 4013,
+      "actual": 2813,
       "unit": "ms",
       "passed": false
     },
     "P1-lh-lcp": {
       "name": "Lighthouse LCP",
       "target": "≤ 2.5s",
-      "actual": 8403,
+      "actual": 7502,
       "unit": "ms",
       "passed": false
     },
     "P1-lh-tbt": {
       "name": "Lighthouse TBT",
       "target": "≤ 200ms",
-      "actual": 301,
+      "actual": 263,
       "unit": "ms",
       "passed": false
     }
